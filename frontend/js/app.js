@@ -45,25 +45,63 @@
       <button class="btn small skip" data-act="skip">🚀 不听不读，我都懂了，下一步 →</button>
     </div>`;
 
+  // 当前正在"听"的按钮（全局唯一，因为浏览器 TTS 同时只能播放一个）
+  let activeListenBtn = null;
+  function resetListenBtn(btn) {
+    if (!btn) return;
+    btn.dataset.listening = "";
+    btn.textContent = btn.dataset.origText || "🔊 听";
+  }
+
   // 绑定一组朗读行按钮
-  function bindAudioRow(parent, { onListen, onReadDone, onSkip }) {
+  function bindAudioRow(parent, { listenText, onListenStart, onReadDone, onSkip }) {
     // 兼容两种结构：父元素自身就是音频行，或音频行是父元素的后代
     const rowEl = (parent.matches && parent.matches("[data-audio]")) ? parent : parent.querySelector("[data-audio]");
     if (!rowEl) return;
-    rowEl.querySelector('[data-act="listen"]').onclick = () => onListen();
+    const listenBtn = rowEl.querySelector('[data-act="listen"]');
+    listenBtn.dataset.origText = listenBtn.textContent;
+    listenBtn.dataset.listening = "";
+    listenBtn.onclick = async () => {
+      if (listenBtn.dataset.listening === "1") {
+        // 再次点击：停止朗读
+        Bee.stopSpeak();
+        resetListenBtn(listenBtn);
+        if (activeListenBtn === listenBtn) activeListenBtn = null;
+        return;
+      }
+      // 开始听：先重置其他可能正在听的按钮
+      if (activeListenBtn && activeListenBtn !== listenBtn) resetListenBtn(activeListenBtn);
+      activeListenBtn = listenBtn;
+      listenBtn.dataset.listening = "1";
+      listenBtn.textContent = "🔇 停止听";
+      if (onListenStart) onListenStart();
+      await Bee.say(listenText);
+      if (activeListenBtn === listenBtn) {
+        resetListenBtn(listenBtn);
+        activeListenBtn = null;
+      }
+    };
     const readBtn = rowEl.querySelector('[data-act="read"]');
     // 每次绑定都重置"朗读结束"状态，避免上一题残留导致直接跳过
     readBtn.dataset.done = "";
     readBtn.textContent = "🗣️ 朗读";
     readBtn.classList.remove("read-done");
     readBtn.onclick = () => {
+      // 朗读/前进时，先把正在播放的"听"停下来
+      Bee.stopSpeak();
+      if (activeListenBtn) { resetListenBtn(activeListenBtn); activeListenBtn = null; }
       if (readBtn.dataset.done === "1") { onReadDone(); return; }
       readBtn.dataset.done = "1";
       readBtn.textContent = "✅ 我朗读结束了";
       readBtn.classList.add("read-done");
       toast("慢慢读，不着急～读完了就点「我朗读结束了」");
     };
-    rowEl.querySelector('[data-act="skip"]').onclick = () => onSkip();
+    rowEl.querySelector('[data-act="skip"]').onclick = () => {
+      // 跳过时，先把正在播放的"听"停下来
+      Bee.stopSpeak();
+      if (activeListenBtn) { resetListenBtn(activeListenBtn); activeListenBtn = null; }
+      onSkip();
+    };
   }
 
   // 记录断点：当前进行到的阶段与步骤（下次从中断处继续）
@@ -202,19 +240,14 @@
     // 绑定「听题 / 朗读题目 / 不听不读」
     const pAudio = $("problemAudio");
     bindAudioRow(pAudio, {
-      onListen: async () => {
-        const p = state.problem;
-        API.event(p.id, -1, "listen_problem");
-        await Bee.say(`听题开始：${p.content.statement}`);
-      },
+      listenText: `听题开始：${p.content.statement}`,
+      onListenStart: () => { API.event(p.id, -1, "listen_problem"); },
       onReadDone: async () => {
-        const p = state.problem;
         API.event(p.id, -1, "read_problem");
         await Bee.say("很好，你已经熟悉了题目，我开始讲解了！");
         goExplain();
       },
       onSkip: async () => {
-        const p = state.problem;
         API.event(p.id, -1, "skip_problem");
         toast("跳过朗读，直接开讲～");
         goExplain();
@@ -242,10 +275,8 @@
       <div class="golden">${escapeHtml(ex.golden_quote || "")}</div>
       ${AUDIO_ROW("开始听例子")}`;
     bindAudioRow($("workCard"), {
-      onListen: async () => {
-        API.event(state.problem.id, -1, "listen_example");
-        await Bee.say(`${ex.explanation}。${ex.worked_example || ""}。记住：${ex.golden_quote || ""}`);
-      },
+      listenText: `${ex.explanation}。${ex.worked_example || ""}。记住：${ex.golden_quote || ""}`,
+      onListenStart: () => { API.event(state.problem.id, -1, "listen_example"); },
       onReadDone: async () => {
         API.event(state.problem.id, -1, "read_example");
         await Bee.say("很好！接下来我把代码一步一步拆给你，我们开始手撕吧！");
@@ -292,10 +323,8 @@
       <pre class="code">${escapeHtml(step.code || "")}</pre>
       ${AUDIO_ROW(`听第${i + 1}步`)}`;
     bindAudioRow($("workCard"), {
-      onListen: async () => {
-        API.event(p.id, i, "listen_step");
-        await Bee.say(`第${i + 1}步，${step.title}。${step.explanation}`);
-      },
+      listenText: `第${i + 1}步，${step.title}。${step.explanation}`,
+      onListenStart: () => { API.event(p.id, i, "listen_step"); },
       onReadDone: async () => {
         API.event(p.id, i, "read_step");
         toast("朗读完这一步，就把讲解遮住，自己敲一遍～");

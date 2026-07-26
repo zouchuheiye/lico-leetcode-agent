@@ -116,8 +116,9 @@ html, body {
 /* 木偶提线 */
 .string { stroke: #d9c48b; stroke-width: 1.2; opacity: .5; }
 
-/* 语音气泡 */
+/* 语音气泡：已隐藏。页面本身已展示完整文字，气泡内容会重复 */
 .speech {
+  display: none !important;
   position: absolute; left: 50%; top: 6px; transform: translateX(60px);
   max-width: 360px; background: #fff; border: 2px solid var(--honey);
   border-radius: 16px; padding: 12px 16px; font-size: 14px; line-height: 1.5;

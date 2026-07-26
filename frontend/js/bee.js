@@ -114,12 +114,10 @@ const Bee = (function () {
   function happy() { el.classList.add("happy"); setTimeout(() => el.classList.remove("happy"), 1200); }
   function stopAll() { setWinding(false); }
 
-  // 说话：显示气泡 + 朗读
+  // 说话：纯朗读，不再显示气泡（页面本身已展示对应文字，避免重复）
   async function say(text, { voice = true, keep = false, pitch } = {}) {
     speechEl.textContent = text;
-    speechEl.classList.remove("hidden");
     if (voice) await speak(text, { pitch });
-    if (!keep) setTimeout(() => speechEl.classList.add("hidden"), 400);
   }
   function hideSpeech() { speechEl.classList.add("hidden"); }
 
