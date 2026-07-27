@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lico · 力扣手撕辅导</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <!-- 顶部栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-bee">🐝</span>
+      <span class="brand-name">Lico</span>
+      <span class="brand-sub">力扣手撕辅导</span>
+    </div>
+    <div class="topbar-right">
+      <div class="honey-progress" id="honeyProgress" title="学习进度">
+        <span class="honey-icon">🍯</span>
+        <span id="progressText">0 / 100</span>
+      </div>
+      <button class="btn ghost" id="btnArchive">📚 已做题集</button>
+      <div class="model-badge" id="modelBadge">DeepSeek-V4</div>
+    </div>
+  </header>
+
+  <!-- 舞台：蜜蜂飞行区 -->
+  <div id="stage" class="stage">
+    <svg id="beeSvg" class="bee hidden" viewBox="0 0 220 200" aria-label="木偶蜜蜂 lico"></svg>
+    <div id="speech" class="speech hidden"></div>
+    <div id="handHint" class="hand-hint hidden">👆</div>
+  </div>
+
+  <!-- ============ 配置页 ============ -->
+  <section id="screenConfig" class="screen">
+    <div class="config-card card">
+      <h2>先给我上发条吧 🔑</h2>
+      <p class="muted">目前仅支持 <b>DeepSeek-V4</b>。输入你的 API Key，我来测试连接。</p>
+      <input type="password" id="apiKey" class="input" placeholder="sk-..." autocomplete="off" />
+      <button class="btn primary" id="btnWindUp">🔧 上发条 · 测试连接</button>
+      <div id="configMsg" class="config-msg"></div>
+    </div>
+  </section>
+
+  <!-- ============ 开始盒子 ============ -->
+  <section id="screenStartBox" class="screen hidden">
+    <div class="start-box card" id="startBox">
+      <div class="start-box-inner">
+        <div class="start-box-title">我们开始学习第一题吧</div>
+        <div class="start-box-sub">点击这个方框，出题小蜜蜂开始运转…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 学习页 ============ -->
+  <section id="screenLearn" class="screen hidden">
+    <div class="learn-grid">
+      <!-- 左：题目 -->
+      <div class="card problem-card">
+        <div class="problem-head">
+          <span class="seq-badge" id="pSeq">#1</span>
+          <h2 id="pTitle">题目</h2>
+          <span class="diff-badge" id="pDiff">简单</span>
+        </div>
+        <div class="statement" id="pStatement"></div>
+        <div id="pExamples" class="examples"></div>
+        <div id="pConstraints" class="constraints"></div>
+        <div class="audio-row" id="problemAudio" data-audio>
+          <button class="btn small" data-act="listen">🔊 开始听题</button>
+          <button class="btn small ghost" data-act="read">🗣️ 朗读题目</button>
+          <button class="btn small skip" data-act="skip">🚀 不听不读，我都懂了，下一步 →</button>
+        </div>
+      </div>
+
+      <!-- 右：讲解 / 步骤 / 敲码 -->
+      <div class="card work-card" id="workCard">
+        <div id="workPlaceholder" class="work-placeholder">
+          熟悉完题目后，小蜜蜂就开始讲解啦～
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 已做题集 ============ -->
+  <section id="screenArchive" class="screen hidden">
+    <div class="archive-grid">
+      <div class="card archive-list">
+        <h3>题目列表</h3>
+        <div id="archiveList"></div>
+      </div>
+      <div class="card archive-detail">
+        <h3 id="archiveDetailTitle">选择左侧题目查看学习轨迹</h3>
+        <div id="archiveDetail" class="trajectory"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 通关仪式 ============ -->
+  <section id="screenFinish" class="screen hidden">
+    <div class="finish-card card">
+      <div class="finish-bee">🐝🍯</div>
+      <h2>你的力扣学习之旅到此结束</h2>
+      <p id="finishWords"></p>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/bee.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
