@@ -28,9 +28,8 @@ html, body {
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 26px; position: sticky; top: 0; z-index: 30;
-  background: rgba(255, 249, 236, 0.85);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
+  background: transparent; /* 完全透明，滚动时也不挡字 */
+  border-bottom: 1px solid transparent;
 }
 .brand { display: flex; align-items: baseline; gap: 8px; }
 .brand-bee { font-size: 24px; animation: floaty 3s ease-in-out infinite; }
@@ -69,7 +68,7 @@ html, body {
 }
 .bee {
   position: absolute; width: 150px; height: 140px;
-  left: 50%; top: 20px; transform: translateX(-50%);
+  left: 60px; top: 20px; transform: none; /* 蜜蜂飞最左（与 on-left 一致），不再居中 */
   filter: drop-shadow(0 8px 10px rgba(180,130,20,.25));
   z-index: 20;
 }
@@ -81,7 +80,7 @@ html, body {
 @keyframes flyIn {
   0%   { left: -140px; top: 120px; transform: translateX(0) rotate(-12deg); opacity: 0; }
   60%  { opacity: 1; }
-  100% { left: 50%; top: 20px; transform: translateX(-50%) rotate(0); opacity: 1; }
+  100% { left: 60px; top: 20px; transform: none rotate(0); opacity: 1; }
 }
 @keyframes hover {
   0%,100% { top: 20px; }
@@ -100,6 +99,9 @@ html, body {
 
 /* 翅膀扇动 */
 .wing { transform-box: fill-box; transform-origin: bottom center; animation: flap .12s ease-in-out infinite alternate; }
+/* 朗读中：蜜蜂嘴一张一合（声情并茂） */
+.bee.talking #beeMouth { animation: bee-talk .28s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes bee-talk { from { transform: scaleY(1) translateY(0); } to { transform: scaleY(.35) translateY(3px); } }
 @keyframes flap { from { transform: rotate(0); } to { transform: rotate(-26deg); } }
 
 /* 发条钥匙 */
@@ -171,7 +173,75 @@ html, body {
 .start-box-sub { color: var(--ink-soft); margin-top: 8px; font-size: 14px; }
 
 /* 学习网格 */
-.learn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+/* 关键：minmax(0, 1fr) 防止 grid item 被内容撑大（pre/textarea 的长行内容
+   会让默认 min-width:auto 的 cell 超出 1fr 平均分配），保证两列等宽。
+   关键②：grid-template-rows: 1fr 显式 1 行 → 两列 cell 自动 stretch 等高。
+   配合下面的 .problem-card / .work-card flex column + pre/textarea flex:1，
+   让"讲解页代码框"和"抄写框"天然等大、顶对齐，**零 JS 同步**。 */
+.learn-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  gap: 20px;
+}
+/* 学习页两列都改成 flex column，让 pre / copy-box / dictation-box 能用 flex:1 撑满 cell 高度。
+   默写页 .learn-grid.typing 是单列布局，下面用 .problem-card { display: block } 覆盖，不影响。 */
+.learn-grid .problem-card,
+.learn-grid .work-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* 关键：让 cell 内的 flex 子项能真正收缩到 cell 高度，否则 pre 撑高 cell 死循环 */
+}
+/* 关键：pre 用 flex:0 0 auto 当"真值锚"——不被 card flex 撑高，显示的就是内容真实高度 H。
+   这样 JS 测到的就是真值，能稳定镜像给右边；若用 flex:1 会被 grid/card 拉伸，测到假值。 */
+.learn-grid .problem-card > pre.code {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin-top: 8px;
+}
+/* 步骤分隔虚线：第 2/3/4 步的绿框里，分隔「前面积累代码」与「当前步新增代码」 */
+.step-separator {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin: 14px 0 6px;
+  font-size: 12px;
+  color: var(--honey-deep);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.step-separator::before,
+.step-separator::after {
+  content: "";
+  flex: 1 1 auto;
+  border-top: 1.5px dashed #d9b04a; /* 蜂蜜色虚线 */
+  margin: 0 10px;
+}
+/* 左列折叠方块：前面步骤收成 [📦 第 k 步：标题] 一行，点击展开看代码 */
+.step-fold { flex: 0 0 auto; margin-top: 8px; border: 1px solid #e5cf85; border-radius: 8px; background: #f5eed8; overflow: hidden; }
+.step-fold-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: transparent; border: none; cursor: pointer;
+  font: inherit; text-align: left; color: var(--honey-deep);
+  font-weight: 600; font-size: 13px;
+}
+.step-fold-caret { transition: transform .2s ease; }
+.step-fold:not(.open) .step-fold-caret { transform: rotate(-90deg); }
+.step-fold-body { display: none !important; margin: 0; border: none; border-top: 1px solid #e5cf85; border-radius: 0; background: #fff8e1; }
+.step-fold.open .step-fold-body { display: block !important; }
+/* 当 step-fold 处于 .open 状态时，把折叠方块本身的浅黄色背景去掉，让代码块与外层 problem-card 颜色更协调 */
+.step-fold.open { background: #fff8e1; }
+/* 讲解页：右列顶部的「步骤进度感」组件（方案 B） */
+.step-progress { margin-bottom: 12px; }
+.step-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.step-progress-label { font-size: 16px; font-weight: 500; color: var(--honey-deep); }
+.step-progress-sub { font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; }
+.step-progress-bar { height: 8px; background: #fff0c8; border-radius: 4px; overflow: hidden; }
+.step-progress-bar > i { display: block; height: 100%; background: var(--honey); border-radius: 4px; transition: width .3s ease; }
+/* 题目页：左列（题目）居中、右列（讲解/敲码）隐藏 */
+.learn-grid.problem-only { grid-template-columns: min(720px, 100%); justify-content: center; }
+.learn-grid.problem-only .work-card { display: none; }
+/* 放大功能已删除（用户需求 2026-07-28 18:53） */
 @media (max-width: 900px){ .learn-grid { grid-template-columns: 1fr; } }
 .problem-head { display: flex; align-items: center; gap: 10px; }
 .problem-head h2 { margin: 0; font-size: 20px; flex: 1; }
@@ -184,12 +254,124 @@ html, body {
 .examples .example code { color: var(--honey-deep); }
 .constraints { font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
 .constraints li { margin: 2px 0; }
-.audio-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+/* 示例与约束折叠器 */
+.reveal.collapsed { display: none; }
+.reveal-btn {
+  display: inline-block; width: fit-content;
+  margin: 14px 0 0; padding: 8px 14px;
+  border: 2px solid var(--honey); background: #fffdf6;
+  color: var(--honey-deep); border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.reveal-btn:hover { background: #fff3d6; }
+.audio-row { display: flex; gap: 10px; margin-top: 32px; flex-wrap: wrap; }
+
+/* 讲解页底部：语言选择行（解耦于学习轨迹，仅 localStorage 记忆） */
+.lang-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 18px; padding: 10px 14px;
+  background: #fff6df; border: 2px dashed var(--honey); border-radius: 8px;
+  flex-wrap: wrap;
+}
+.lang-row label { font-size: 14px; color: var(--honey-deep); font-weight: 600; }
+.lang-row select.lang-select {
+  padding: 6px 12px; font-size: 14px;
+  border: 2px solid var(--honey); border-radius: 6px;
+  background: #fffdf6; color: var(--ink); outline: none;
+  cursor: pointer; transition: border-color 0.15s;
+}
+.lang-row select.lang-select:hover { border-color: var(--honey-deep); }
+.lang-row select.lang-select:focus { border-color: var(--honey-deep); box-shadow: 0 0 0 2px rgba(255,193,7,0.2); }
 
 /* 工作区 */
 .work-placeholder { color: var(--ink-soft); text-align:center; padding: 40px 0; }
 .section-title { font-weight: 800; font-size: 16px; margin: 4px 0 10px; display:flex; align-items:center; gap:8px; }
-.explain-text { line-height: 1.8; white-space: pre-wrap; }
+.explain-text { line-height: 1.85; color: var(--ink); }
+.explain-text p { margin: 8px 0; }
+
+/* 讲解 markdown 渲染样式（蜂蜜主题） */
+.explain-text h3.sub-title {
+  font-size: 15px; font-weight: 800; color: var(--honey-deep);
+  margin: 14px 0 6px; padding: 4px 0 4px 10px;
+  border-left: 4px solid var(--honey);
+  background: linear-gradient(90deg, #fff7df, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.explain-text .kw {
+  display: inline-block;
+  padding: 1px 8px; margin: 0 2px;
+  font-weight: 700; color: var(--honey-deep);
+  background: linear-gradient(180deg, #fff3c2, #ffe187);
+  border: 1px solid rgba(214, 158, 46, .35);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(214, 158, 46, .15);
+}
+.explain-text .inline-code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em; padding: 1px 6px; margin: 0 2px;
+  background: #fff5d6; color: #5a3500;
+  border: 1px solid rgba(214, 158, 46, .25);
+  border-radius: 4px;
+}
+.explain-text blockquote.quote {
+  margin: 10px 0; padding: 10px 14px;
+  background: #fff8e0; border-left: 4px solid var(--honey);
+  color: #5a3500; font-style: italic; border-radius: 0 8px 8px 0;
+}
+.explain-text ol.md-list, .explain-text ul.md-list {
+  margin: 8px 0 10px 22px; padding: 0;
+}
+.explain-text ol.md-list li, .explain-text ul.md-list li {
+  margin: 4px 0; line-height: 1.8;
+}
+.explain-text ol.md-list li::marker { color: var(--honey-deep); font-weight: 700; }
+
+/* 关键概念卡片组 */
+.concept-row {
+  margin: 14px 0 4px; padding: 10px 12px;
+  background: linear-gradient(180deg, #fffdf6, #fff8e0);
+  border: 1.5px dashed rgba(214, 158, 46, .5);
+  border-radius: 10px;
+}
+.concept-label {
+  font-size: 13px; font-weight: 800; color: var(--honey-deep);
+  margin-bottom: 8px; letter-spacing: .5px;
+}
+.concept-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.concept-card {
+  display: inline-block;
+  padding: 4px 12px; font-size: 14px; font-weight: 600;
+  color: #2a1404;
+  background: linear-gradient(180deg, #ffe187, #ffd24d);
+  border: 1px solid rgba(214, 158, 46, .45);
+  border-radius: 999px;
+  box-shadow: 0 2px 0 rgba(214, 158, 46, .18);
+}
+.concept-card .kw {
+  background: transparent; border: none; box-shadow: none;
+  padding: 0; margin: 0; font-weight: 800; color: #2a1404;
+}
+
+/* 示意图（6 套 SVG 模板，蜂蜜主题） */
+.diagram-box {
+  margin: 12px 0;
+  padding: 12px;
+  background: linear-gradient(180deg, #fffdf6, #fff8e0);
+  border: 1.5px solid rgba(214, 158, 46, .35);
+  border-radius: 10px;
+  overflow-x: auto;
+  text-align: center;
+}
+.diagram-svg { display: inline-block; max-width: 100%; height: auto; }
+
+/* TTS 就地逐字高亮：文字随语音逐字加粗变黑体（吸引注意力） */
+.tts-ch { transition: color .12s ease, font-weight .12s ease, background-color .12s ease; border-radius: 2px; }
+.tts-read { color: var(--ink); font-weight: 600; }
+.tts-current {
+  color: #2a1404; font-weight: 800;
+  background: linear-gradient(180deg, #ffe9a8, #ffd24d);
+  box-shadow: 0 0 0 2px rgba(255, 196, 0, .35);
+}
 .golden {
   margin: 14px 0; padding: 14px 16px; border-left: 4px solid var(--honey);
   background: #fff6df; border-radius: 0 12px 12px 0; font-style: italic; font-weight: 600;
@@ -202,22 +384,102 @@ pre.code, textarea.code {
   background: #fbf4e2; color: var(--ink); border-radius: 12px; padding: 14px 16px;
   white-space: pre; overflow: auto; margin: 10px 0;
   border: 1px solid var(--line);
+  /* 显式撑满父容器，与右列 textarea 严格等宽（避免 box-sizing 差异） */
+  width: 100%;
+  box-sizing: border-box;
 }
 textarea.code {
-  width: 100%; min-height: 190px; border: 2px solid var(--honey); resize: vertical;
+  width: 100%; min-height: 280px; border: 2px solid var(--honey); resize: vertical;
   background: #fffdf6; color: var(--ink); outline: none;
+  box-sizing: border-box; /* 与 pre.code 一致，确保两边元素框宽相同 */
 }
+/* 放大功能已删除（用户需求 2026-07-28 18:53） */
 textarea.code:focus { border-color: var(--honey-deep); background: #fffef9; }
+
+/* 默写模式：单列垂直堆叠，题目卡在顶部（用户可看着题目默写），敲码框在下方，蜜蜂左移 */
+.learn-grid.typing {
+  grid-template-columns: 1fr;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.learn-grid.typing .problem-card {
+  max-width: 720px;
+  margin: 0 auto 16px;
+  display: block; /* 恢复显示（之前 display:none，让用户看着题目默写） */
+  padding: 14px 22px 18px; /* 减小上下 padding，让题目卡上移靠近蜜蜂 */
+}
+.learn-grid.typing .problem-card .audio-row { display: none; } /* 默写时不需要听题/朗读题目按钮 */
+.learn-grid.typing textarea.code { min-height: 50vh; } /* 题目卡占了一部分高度，敲码框相应减少 */
+/* 讲解模式：让两个卡片（problemCard + workCard）整体上移，与蜜蜂底部对齐。
+   蜜蜂在左上方 top:20px + h:140 ≈ 底部 160px，
+   取消 screenLearn 的 padding-top（默认 8px），并让 learn-grid 整体上移 120px（蜜蜂下方 0px）。 */
+#screenLearn:has(.learn-grid:not(.typing)) { padding-top: 0; }
+#screenLearn:has(.learn-grid:not(.typing)) .learn-grid { margin-top: -120px; }
+/* 默写模式：让题目卡顶部贴近蜜蜂（蜜蜂在左上方 top:20px + h:140 ≈ 底部 233px）。
+   取消 screenLearn 的 padding-top（默认 8px），并让题目卡整体上移，与蜜蜂底部对齐。 */
+#screenLearn:has(.learn-grid.typing) { padding-top: 0; }
+#screenLearn:has(.learn-grid.typing) .learn-grid.typing { margin-top: -140px; }
+/* 默写模式：蜜蜂飞到屏幕左侧 */
+.bee.on-left {
+  left: 60px !important;
+  top: 20px;
+  transform: none !important;
+  animation: hover 2.4s ease-in-out infinite;
+}
 
 /* 之前步骤已写好的代码：现在与可编辑区共用同一个 textarea，以下样式仅用于归档/轨迹展示 */
 .prev-code { margin: 6px 0 4px; }
 .prev-code-label { font-size: 12px; color: var(--ink-soft); margin: 4px 0 2px; opacity: .85; }
 pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b27e; }
 .step-nav { display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
-.step-dot { width:22px;height:22px;border-radius:50%; background:#eadfc2; color:var(--ink-soft);
-  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700; }
+.step-dot {
+  width:22px; height:22px; border-radius:50%; background:#eadfc2; color:var(--ink-soft);
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+  border: none; padding: 0; cursor: pointer; font-family: inherit; line-height: 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.step-dot:hover { transform: scale(1.12); box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+.step-dot:active { transform: scale(0.95); }
 .step-dot.active { background: var(--honey); color:#fff; }
 .step-dot.done { background: var(--green); color:#fff; }
+
+/* 抄写框（讲解步骤下） */
+.copy-box { width: 100%; box-sizing: border-box; }  /* margin-top 由 .learn-grid:not(.typing) .copy-box { margin-top: 0 } 控制 */
+.copy-box-label {
+  display: inline-block; font-size: 13px; font-weight: 700;
+  color: var(--honey-deep); background: #fff6df;
+  padding: 4px 10px; border-radius: 8px; margin-bottom: 6px;
+}
+/* 抄写框：去除独立边框/背景/圆角，与外层 work-card 卡片融为一体。
+   整个右列外框就是一个抄写框，不再"方框里套方框"。 */
+.learn-grid .work-card .copy-ta {
+  width: 100%; box-sizing: border-box; min-height: 120vh;  /* 60vh → 120vh：用户要"再长一倍"，textarea 可滚动 */
+  border: none;             /* 去掉橙色边框（之前是 var(--honey) 蜂蜜色） */
+  background: transparent;  /* 透明背景，与外层 work-card 同色 */
+  border-radius: 0;         /* 不需要圆角（外层卡片已有） */
+  padding: 0;               /* 去掉内边距，让 textarea 紧贴外层 work-card 内容区 */
+  margin: 0; resize: vertical;  /* 允许拖拽调整高度（用户要"长一些的方框"） */
+  outline: none;            /* 去掉聚焦时的 outline */
+  color: var(--ink);
+  font-family: "JetBrains Mono", Consolas, monospace; font-size: 13px; line-height: 1.6;
+  white-space: pre; overflow: auto;
+}
+.copy-box textarea.code:focus {
+  border: none; background: transparent;  /* focus 不显示任何边框/背景变化 */
+}
+.copy-box + .step-finish { margin-top: 12px; }
+
+/* 默写框（敲码阶段） */
+.dictation-box {
+  margin: 6px 0 10px; padding: 12px 14px;
+  border: 2px solid var(--honey); background: #fffdf6;
+  border-radius: 12px;
+}
+.dictation-header {
+  font-weight: 800; font-size: 14px; color: var(--honey-deep);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.dictation-hint { font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
 
 /* 审查反馈 */
 .review-box { border-radius:12px; padding:12px 14px; margin:12px 0; font-size:14px; line-height:1.6; }

@@ -57,19 +57,22 @@
   <section id="screenLearn" class="screen hidden">
     <div class="learn-grid">
       <!-- 左：题目 -->
-      <div class="card problem-card">
+      <div class="card problem-card" id="problemCard">
         <div class="problem-head">
           <span class="seq-badge" id="pSeq">#1</span>
           <h2 id="pTitle">题目</h2>
           <span class="diff-badge" id="pDiff">简单</span>
         </div>
         <div class="statement" id="pStatement"></div>
-        <div id="pExamples" class="examples"></div>
-        <div id="pConstraints" class="constraints"></div>
+        <div class="reveal collapsed" id="pReveal">
+          <div id="pExamples" class="examples"></div>
+          <div id="pConstraints" class="constraints"></div>
+        </div>
+        <button class="reveal-btn" id="pRevealBtn" type="button" aria-expanded="false">📚 查看示例与约束 ▾</button>
         <div class="audio-row" id="problemAudio" data-audio>
           <button class="btn small" data-act="listen">🔊 开始听题</button>
           <button class="btn small ghost" data-act="read">🗣️ 朗读题目</button>
-          <button class="btn small skip" data-act="skip">🚀 不听不读，我都懂了，下一步 →</button>
+          <button class="btn small skip" data-act="skip">✅ 听完，读完，开始讲解 →</button>
         </div>
       </div>
 
