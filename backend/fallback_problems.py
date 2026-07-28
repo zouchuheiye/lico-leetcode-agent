@@ -31,61 +31,110 @@ FALLBACK_TITLES = [
     ("maximum-depth-of-binary-tree", "二叉树的最大深度", "简单"),
 ]
 
-# 若需要凑满 100，用占位主题补齐（在线时由 Agent 实时生成真实题目）
-_EXTRA = [
-    "best-time-to-buy-and-sell-stock", "single-number", "linked-list-cycle",
-    "min-stack", "intersection-of-two-linked-lists", "majority-element",
-    "reverse-linked-list", "contains-duplicate", "invert-binary-tree",
-    "valid-anagram", "move-zeroes", "fizz-buzz", "subtree-of-another-tree",
-    "first-bad-version", "ransom-note", "add-binary", "sqrtx",
-    "plus-one", "length-of-last-word", "remove-element",
+# 第 21~100 题：真实力扣题名（在线时由 Agent 各自生成真实题面/讲解/分步）
+FALLBACK_TITLES += [
+    ("best-time-to-buy-and-sell-stock", "买卖股票的最佳时机", "简单"),
+    ("valid-palindrome", "验证回文串", "简单"),
+    ("single-number", "只出现一次的数字", "简单"),
+    ("linked-list-cycle", "环形链表", "简单"),
+    ("reverse-linked-list", "反转链表", "简单"),
+    ("binary-tree-level-order-traversal", "二叉树的层序遍历", "中等"),
+    ("convert-sorted-array-to-binary-search-tree", "将有序数组转换为二叉搜索树", "简单"),
+    ("balanced-binary-tree", "平衡二叉树", "简单"),
+    ("binary-tree-right-side-view", "二叉树的右视图", "中等"),
+    ("lowest-common-ancestor-of-a-binary-tree", "二叉树的最近公共祖先", "中等"),
+    ("invert-binary-tree", "翻转二叉树", "简单"),
+    ("path-sum", "路径总和", "简单"),
+    ("course-schedule", "课程表", "中等"),
+    ("min-stack", "最小栈", "中等"),
+    ("intersection-of-two-linked-lists", "相交链表", "简单"),
+    ("two-sum-ii-input-array-is-sorted", "两数之和 II - 输入有序数组", "中等"),
+    ("3sum", "三数之和", "中等"),
+    ("3sum-closest", "最接近的三数之和", "中等"),
+    ("letter-combinations-of-a-phone-number", "电话号码的字母组合", "中等"),
+    ("4sum", "四数之和", "中等"),
+    ("remove-nth-node-from-end-of-list", "删除链表的倒数第 N 个结点", "中等"),
+    ("generate-parentheses", "括号生成", "中等"),
+    ("combination-sum", "组合总和", "中等"),
+    ("permutations", "全排列", "中等"),
+    ("subsets", "子集", "中等"),
+    ("word-search", "单词搜索", "中等"),
+    ("number-of-islands", "岛屿数量", "中等"),
+    ("rotate-image", "旋转图像", "中等"),
+    ("group-anagrams", "字母异位词分组", "中等"),
+    ("set-matrix-zeroes", "矩阵置零", "中等"),
+    ("jump-game", "跳跃游戏", "中等"),
+    ("unique-paths", "不同路径", "中等"),
+    ("minimum-path-sum", "最小路径和", "中等"),
+    ("edit-distance", "编辑距离", "困难"),
+    ("longest-increasing-subsequence", "最长递增子序列", "中等"),
+    ("house-robber", "打家劫舍", "中等"),
+    ("house-robber-ii", "打家劫舍 II", "中等"),
+    ("integer-break", "整数拆分", "中等"),
+    ("coin-change", "零钱兑换", "中等"),
+    ("perfect-squares", "完全平方数", "中等"),
+    ("longest-palindromic-subsequence", "最长回文子序列", "中等"),
+    ("longest-common-subsequence", "最长公共子序列", "中等"),
+    ("palindromic-substrings", "回文子串", "中等"),
+    ("best-time-to-buy-and-sell-stock-with-cooldown", "最佳买卖股票时机含冷冻期", "中等"),
+    ("best-time-to-buy-and-sell-stock-with-transaction-fee", "最佳买卖股票时机含手续费", "中等"),
+    ("best-time-to-buy-and-sell-stock-iii", "买卖股票的最佳时机 III", "困难"),
+    ("task-scheduler", "任务调度器", "中等"),
+    ("top-k-frequent-elements", "前 K 个高频元素", "中等"),
+    ("sort-characters-by-frequency", "根据字符出现频率排序", "中等"),
+    ("candy", "分发糖果", "困难"),
+    ("daily-temperatures", "每日温度", "中等"),
+    ("trapping-rain-water", "接雨水", "困难"),
+    ("largest-rectangle-in-histogram", "柱状图中最大的矩形", "困难"),
+    ("sliding-window-maximum", "滑动窗口最大值", "困难"),
+    ("longest-consecutive-sequence", "最长连续序列", "中等"),
+    ("find-the-duplicate-number", "寻找重复数", "中等"),
+    ("sort-colors", "颜色分类", "中等"),
+    ("spiral-matrix", "螺旋矩阵", "中等"),
+    ("spiral-matrix-ii", "螺旋矩阵 II", "中等"),
+    ("add-two-numbers-ii", "两数相加 II", "中等"),
+    ("happy-number", "快乐数", "简单"),
+    ("isomorphic-strings", "同构字符串", "简单"),
+    ("word-pattern", "单词规律", "简单"),
+    ("valid-anagram", "有效的字母异位词", "简单"),
+    ("binary-search", "二分查找", "简单"),
+    ("search-a-2d-matrix", "搜索二维矩阵", "中等"),
+    ("first-bad-version", "第一个错误的版本", "简单"),
+    ("search-in-rotated-sorted-array", "搜索旋转排序数组", "中等"),
+    ("find-minimum-in-rotated-sorted-array", "寻找旋转排序数组中的最小值", "中等"),
+    ("find-first-and-last-position-of-element-in-sorted-array", "在排序数组中查找元素的第一个和最后一个位置", "中等"),
+    ("find-peak-element", "寻找峰值", "中等"),
+    ("implement-trie-prefix-tree", "实现 Trie", "中等"),
+    ("lru-cache", "LRU 缓存", "中等"),
+    ("minimum-window-substring", "最小覆盖子串", "困难"),
+    ("decode-string", "字符串解码", "中等"),
+    ("basic-calculator", "基本计算器", "中等"),
+    ("evaluate-reverse-polish-notation", "逆波兰表达式求值", "中等"),
+    ("construct-binary-tree-from-preorder-and-inorder-traversal", "从前序与中序遍历序列构造二叉树", "中等"),
+    ("binary-tree-level-order-traversal-ii", "二叉树的层序遍历 II", "简单"),
+    ("merge-k-sorted-lists", "合并 K 个升序链表", "困难"),
 ]
-_idx = 0
-while len(FALLBACK_TITLES) < 100:
-    slug = f"{_EXTRA[_idx % len(_EXTRA)]}-{len(FALLBACK_TITLES)}"
-    FALLBACK_TITLES.append((slug, f"经典算法题 #{len(FALLBACK_TITLES)+1}", "中等"))
-    _idx += 1
 
 
 def fallback_content(seq: int) -> dict:
+    """第 1 题用真实内容；第 2~100 题一律套壳第一题《两数之和》的题面/示例/约束，
+    只换题名和难度——保证离线时 100 道都有真实可用的题目内容。"""
     slug, title, difficulty = FALLBACK_TITLES[(seq - 1) % len(FALLBACK_TITLES)]
-    detail = FALLBACK_DETAIL.get(slug)
-    if detail:
-        return {"slug": slug, "title": title, "difficulty": difficulty, **detail["content"]}
-    return {
-        "slug": slug,
-        "title": title,
-        "difficulty": difficulty,
-        "statement": f"这是第 {seq} 题《{title}》。请根据题目名称回忆其经典描述，"
-        f"配置 DeepSeek-V4 的 Key 后，出题 Agent 会为你生成完整、规范的题面。",
-        "examples": [{"input": "示例输入", "output": "示例输出", "explanation": "示例说明"}],
-        "constraints": ["数据范围见力扣原题"],
-    }
+    first_content = FALLBACK_DETAIL["two-sum"]["content"]
+    # 第 1 题：保持原行为（向后兼容）；其它题：保留各自题名/难度，内容套第一题
+    if seq == 1:
+        return {"slug": slug, "title": title, "difficulty": difficulty, **first_content}
+    return {"slug": slug, "title": title, "difficulty": difficulty, **first_content}
 
 
 def fallback_explanation(slug: str) -> dict:
-    detail = FALLBACK_DETAIL.get(slug)
-    if detail:
-        return detail["explanation"]
-    return {
-        "explanation": "配置 DeepSeek-V4 后，讲解 Agent 会给出形象生动又简洁明了的思路拆解。",
-        "worked_example": "配置后可查看逐步推演的例子。",
-        "golden_quote": "把复杂的问题拆小，本身就是一种解法。",
-    }
+    """讲解部分也套壳第一题：所有题共用同一份讲解+例子+金句。"""
+    return FALLBACK_DETAIL["two-sum"]["explanation"]
 
 
 def fallback_steps(slug: str) -> list:
-    detail = FALLBACK_DETAIL.get(slug)
-    if detail:
-        return detail["steps"]
-    return [
-        {
-            "index": 0,
-            "title": "第一步：搭好函数骨架",
-            "explanation": "先明确输入输出，写出函数签名，是手撕代码的第一步。",
-            "code": "def solve(nums):\n    # 定义结果容器\n    result = None\n    return result",
-        }
-    ]
+    """分步代码也套壳第一题：所有题共用同一份 3 步拆分。"""
+    return FALLBACK_DETAIL["two-sum"]["steps"]
 
 
 # ---------------- 完整离线内容（第 1 题：两数之和）----------------

@@ -35,10 +35,12 @@ class KeyBody(BaseModel):
 
 class StartBody(BaseModel):
     seq: int | None = None
+    language: str = "python"
 
 
 class ProblemBody(BaseModel):
     problem_id: int
+    language: str = "python"
 
 
 class EventBody(BaseModel):
@@ -53,6 +55,7 @@ class ReviewBody(BaseModel):
     step_index: int = -1
     code: str
     is_final: bool = False
+    language: str = "python"
 
 
 def _key() -> str:
@@ -101,7 +104,7 @@ def learn_start(body: StartBody):
         return {"finished": True}
     problem = storage.get_problem_by_seq(seq)
     if problem is None:
-        content = agents.gen_problem(_key(), seq)
+        content = agents.gen_problem(_key(), seq, body.language)
         problem = storage.create_problem(
             seq=seq,
             slug=content["slug"],
@@ -125,7 +128,7 @@ def learn_explain(body: ProblemBody):
         raise HTTPException(404, "题目不存在")
     if problem.get("explanation"):
         return {"explanation": problem["explanation"]}
-    explanation = agents.gen_explanation(_key(), problem)
+    explanation = agents.gen_explanation(_key(), problem, body.language)
     storage.save_explanation(problem["id"], explanation)
     storage.add_event(problem["id"], -1, "explanation_generated", None)
     return {"explanation": explanation}
@@ -138,7 +141,7 @@ def learn_steps(body: ProblemBody):
         raise HTTPException(404, "题目不存在")
     if problem.get("steps"):
         return {"steps": problem["steps"]}
-    steps = agents.gen_steps(_key(), problem)
+    steps = agents.gen_steps(_key(), problem, body.language)
     storage.save_steps(problem["id"], steps)
     storage.add_event(problem["id"], -1, "steps_generated", {"count": len(steps)})
     return {"steps": steps}
@@ -155,7 +158,7 @@ def learn_review(body: ReviewBody):
             if s["index"] == body.step_index:
                 step = s
                 break
-    review = agents.review_code(_key(), problem, step, body.code, body.is_final)
+    review = agents.review_code(_key(), problem, step, body.code, body.is_final, body.language)
     saved = storage.add_submission(problem["id"], body.step_index, body.code, review)
     storage.add_event(problem["id"], body.step_index, "code_reviewed",
                       {"severity": saved["severity"], "passed": saved["passed"]})
@@ -209,11 +212,21 @@ def trajectory(problem_id: int):
 
 # ------------------------------------------------------------ 前端托管
 if os.path.isdir(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+    # 开发期禁用静态资源缓存，保证每次刷新都拉到最新文件
+    class NoCacheStaticFiles(StaticFiles):
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            resp.headers.setdefault("Cache-Control", "no-store")
+            return resp
+
+    app.mount("/static", NoCacheStaticFiles(directory=FRONTEND_DIR), name="static")
 
     @app.get("/")
     def index():
-        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+        return FileResponse(
+            os.path.join(FRONTEND_DIR, "index.html"),
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 if __name__ == "__main__":

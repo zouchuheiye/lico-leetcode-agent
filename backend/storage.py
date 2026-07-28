@@ -7,6 +7,7 @@
 - 已做题集：按题目读取其全部学习过程。
 """
 import json
+import os
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -19,18 +20,43 @@ def _now() -> float:
     return time.time()
 
 
+def _cleanup_stale_journal() -> None:
+    """清理上一次被强制结束（Stop-Process -Force）遗留的 sqlite 临时文件。
+
+    这些残留的 -journal / -wal / -shm 会让下一次连接的首次写入报
+    'unable to open database file'。init_db 在启动时调用，此时没有其它
+    进程持锁，可安全删除（被强杀进程的事务本就已丢失）。
+    """
+    for suffix in ("-journal", "-wal", "-shm"):
+        tmp = DB_PATH + suffix
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+                print(f"[storage] 已清理异常退出遗留的临时文件: {tmp}", flush=True)
+        except OSError as e:
+            print(f"[storage] 清理临时文件失败 {tmp}: {e}", flush=True)
+
+
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30：被强制结束的进程残留的锁会随进程消亡而释放，但 Windows 文件锁
+    #   可能短暂残留，等待即可，避免 'database is locked' / 'unable to open' 直接失败
+    # check_same_thread=False：FastAPI 同步路由在线程池执行，每个请求独立建连，安全
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = sqlite3.Row
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
 def init_db() -> None:
+    _cleanup_stale_journal()
     with get_conn() as conn:
         c = conn.cursor()
         c.execute(

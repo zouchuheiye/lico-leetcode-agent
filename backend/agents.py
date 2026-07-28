@@ -91,14 +91,17 @@ def _parse_json(text: Optional[str]) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------- 出题 Agent
-def gen_problem(api_key: str, seq: int) -> dict:
+def gen_problem(api_key: str, seq: int, language: str = "python") -> dict:
     slug, title, difficulty = fb.FALLBACK_TITLES[(seq - 1) % len(fb.FALLBACK_TITLES)]
     system = (
         "你是资深的力扣出题官。请输出一道经典力扣题目的规范中文题面，"
         "只返回 JSON，字段：statement(题目描述), examples(数组，每项含 input/output/explanation), "
         "constraints(约束数组)。语言简洁、准确。"
     )
-    user = f"请给出力扣题《{title}》(编号顺序第{seq}题, 难度{difficulty})的完整规范题面。"
+    user = (
+        f"请给出力扣题《{title}》(编号顺序第{seq}题, 难度{difficulty})的完整规范题面。"
+        f"如果涉及示例代码片段，请用 {language} 编写。"
+    )
     data = _parse_json(_chat(api_key, system, user, temperature=0.3))
     if data and data.get("statement"):
         return {"slug": slug, "title": title, "difficulty": difficulty,
@@ -109,38 +112,39 @@ def gen_problem(api_key: str, seq: int) -> dict:
 
 
 # ---------------------------------------------------------------- 讲解 Agent
-def gen_explanation(api_key: str, problem: dict) -> dict:
+def gen_explanation(api_key: str, problem: dict, language: str = "python") -> str:
+    """生成通俗讲解，返回纯文本字符串（不使用 markdown 标记）。"""
     system = (
-        "你是最会讲题的算法讲解员小蜜蜂 lico，讲解形象生动又简洁明了。"
-        "只返回 JSON，字段：explanation(核心思路讲解，用比喻，通俗), "
-        "worked_example(用一个具体例子一步步演算), "
-        "golden_quote(从这道题中提炼出的一句哲学金句，让人真正理解这道题的精髓)。"
+        "你是最会讲题的小蜜蜂 lico。请用通俗易懂、形象生动、像讲故事一样的语言，"
+        "讲解这道算法题的解题思路。\n"
+        "要求：\n"
+        "1. 每一段都要有生活化比喻（手算、排队、流水、收纳、走路、地图、做菜等任选）。\n"
+        "2. 语言口语化，不要教科书腔。\n"
+        "3. 只返回讲解正文，不要使用任何 markdown 格式标记（不要 #、**、` 等符号）。\n"
     )
     user = (
         f"题目：{problem['title']}\n"
         f"描述：{problem['content'].get('statement','')}\n"
-        "请讲解这道题。"
+        f"示例：{problem['content'].get('examples', [])}\n"
+        "请讲解解题思路。"
     )
-    data = _parse_json(_chat(api_key, system, user, temperature=0.6))
-    if data and data.get("explanation"):
-        return {
-            "explanation": data.get("explanation"),
-            "worked_example": data.get("worked_example", ""),
-            "golden_quote": data.get("golden_quote", ""),
-        }
-    return fb.fallback_explanation(problem["slug"])
+    data = _chat(api_key, system, user, temperature=0.7)
+    if data and data.strip():
+        return data.strip()
+    # 兜底：离线讲解字符串
+    return fb.fallback_explanation(problem["slug"]).get("explanation", "")
 
 
 # ---------------------------------------------------------------- 分解 Agent
-def gen_steps(api_key: str, problem: dict) -> list:
+def gen_steps(api_key: str, problem: dict, language: str = "python") -> list:
     system = (
-        "你擅长把算法代码按难度拆解成循序渐进的若干步骤（3~5步）。"
-        "只返回 JSON，字段：steps(数组)。每个 step 含："
-        "index(从0开始的序号), title(该步标题), explanation(这一步在做什么), "
-        "incremental_code(【本步新增】的 Python 代码，只写这一步新加的部分，"
-        "不要重复写之前步骤已有的代码；逐行都要有中文注释解释为什么这么写)。"
-        "注意：第 0 步的 incremental_code 就是完整函数开头；后续每一步只写在上一步基础上新追加的行。"
-        "最后一步应是让整段代码成为完整可运行解法的那次追加。"
+        f"你擅长把算法代码按难度拆解成循序渐进的若干步骤（3~5步）。"
+        f"只返回 JSON，字段：steps(数组)。每个 step 含："
+        f"index(从0开始的序号), title(该步标题), explanation(这一步在做什么), "
+        f"incremental_code(【本步新增】的 {language} 代码，只写这一步新加的部分，"
+        f"不要重复写之前步骤已有的代码；逐行都要有中文注释解释为什么这么写)。"
+        f"注意：第 0 步的 incremental_code 就是完整函数开头；后续每一步只写在上一步基础上新追加的行。"
+        f"最后一步应是让整段代码成为完整可运行解法的那次追加。"
     )
     user = (
         f"题目：{problem['title']}\n"
@@ -206,7 +210,7 @@ def _strip_prefix(code: str, prev: str) -> str:
 
 # ---------------------------------------------------------------- 审查 Agent
 def review_code(api_key: str, problem: dict, step: Optional[dict], user_code: str,
-                is_final: bool) -> dict:
+                is_final: bool, language: str = "python") -> dict:
     reference = ""
     if is_final and problem.get("steps"):
         reference = problem["steps"][-1].get("code", "")
@@ -214,11 +218,12 @@ def review_code(api_key: str, problem: dict, step: Optional[dict], user_code: st
         reference = step.get("code", "")
 
     system = (
-        "你是严格但温暖的代码审查员小蜜蜂 lico。审查用户手敲的代码。"
-        "只返回 JSON，字段：severity(none=完全正确/minor=有小问题但思路对/major=错误较大), "
-        "feedback(中文反馈，指出对错与原因), hint(若需重敲，给一句提示)。"
-        "评判标准：思路正确、关键逻辑到位即可判 none 或 minor；"
-        "只有逻辑缺失、方向错误、无法运行才判 major。"
+        f"你是严格但温暖的代码审查员小蜜蜂 lico。代码语言：{language}。"
+        f"审查用户手敲的代码。"
+        f"只返回 JSON，字段：severity(none=完全正确/minor=有小问题但思路对/major=错误较大), "
+        f"feedback(中文反馈，指出对错与原因), hint(若需重敲，给一句提示)。"
+        f"评判标准：思路正确、关键逻辑到位即可判 none 或 minor；"
+        f"只有逻辑缺失、方向错误、无法运行才判 major。"
     )
     scope = "整道题的最终完整代码" if is_final else f"第{(step or {}).get('index',0)+1}步"
     user = (
