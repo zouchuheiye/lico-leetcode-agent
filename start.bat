@@ -59,7 +59,10 @@ echo ============================================================
 echo 启动后台服务... >> "%LOG%"
 
 REM 用 start 把 uvicorn 放到独立的 CMD 窗口运行，这样启动器窗口可以继续检测
-start "Lico 后台服务" /MIN cmd /c "cd /d "%~dp0backend" && venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000"
+REM 用 pushd 切换到 backend 再启动（避免 cd /d 与 start 的引号嵌套被 cmd 解析坏）
+pushd "%~dp0backend"
+start "Lico 后台服务" /MIN cmd /c "venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000"
+popd
 
 REM 5) 等待服务真正就绪，最多等 30 秒
 echo 正在等待服务就绪...
