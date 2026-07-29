@@ -413,17 +413,17 @@
     };
   }
 
-  // 抄写页（描红式、单框草稿纸、所有行一次性注入）：
-  //   - 整个 .copy-card 就是一张草稿纸（蜂蜜边框 + 浅黄底），内部不再有独立卡片。
-  //   - 草稿纸里纵向平铺 N+1 行：第 0 行是说明行（"该框用于描红抄写，这一行不用抄"），
-  //     第 1..N 行是代码行。每行 .copy-line 一次性渲染、所有 .gh 字符就位，行三态：
+  // 抄写页（描红式、单框草稿纸、所有行一次性注入、当前行即输入行）：
+  //   - 整个 .copy-card 就是一张草稿纸（蜂蜜边框 + 浅黄底），内部不再有独立卡片、也没有独立输入框。
+  //   - 草稿纸里纵向平铺 N+1 行：第 0 行是说明行，第 1..N 行是代码行。每行 .copy-line 一次性渲染、
+  //     所有 .gh 字符就位，行三态：
   //       invisible = 同草稿纸底色（display:visible 但看不见，DOM 已占位，框高稳定）；
-  //       current   = 当前待敲行（浅色描红）；
+  //       current   = 当前待敲行（浅色描红，且就是"输入行"——隐藏 #copyInput 聚焦在此行的 .gh 上）；
   //       done      = 已敲完（字符黑加粗只读，留在纸内）。
-  //   - 开局第 0 行自动为 current（说明行，回车直接过，不计入已抄）；真代码行从 invisible 浮为
-  //     current（浅色）。用户在 textarea 逐字敲入，匹配字符即时变 .typed（黑加粗蜂蜜背景），
+  //   - 用户在"当前行"里直接敲字（隐藏 input 接收键盘），匹配的 .gh 即时变 .typed（黑加粗蜂蜜背景），
   //     错字符标 .err（红闪）。整行完全匹配回车 → 该行升 done，下一行从 invisible 浮为 current。
-  //   - textarea 嵌在草稿纸最下方作为"写笔"。Tab 缩进由 enableTab 支持；空行直接回车即可。
+  //   - # 注释行：不抄、直接展示（自动标 done 跳过，不计入"需抄行数"）。
+  //   - Tab 缩进由 keydown 手动插入 4 空格支持；空行直接回车即可。
   function renderCopy() {
     const p = state.problem;
     if (!p.steps || !p.steps.length) { toast("步骤还没生成"); return; }
@@ -431,7 +431,10 @@
     const full = (last.code || last.incremental_code || "").replace(/\s+$/, "");
     const lines = full.split("\n");
     const BANNER = "# 该框用于描红抄写（这一行不用抄）";
-    let done = 0; // 已提交行数（含第 0 行说明）
+    const isComment = (s) => s.trim().startsWith("#");
+    const totalCopy = lines.filter((l) => !isComment(l)).length; // 需要抄的行数（注释不计入）
+    let cursor = 0; // 当前行索引：0 = 说明行；1..lines.length = 代码行
+    let copied = 0; // 用户已抄的非注释行数
     recordProgress("copy", state.stepIndex);
     setLayoutMode("single");
     const work = $("workCard");
@@ -452,9 +455,10 @@
       }
       return h;
     }
+    // 同步描红：把隐藏 input.value 与当前行目标字符逐一比对
     function syncGhost(lineEl, input) {
       const spans = lineEl.querySelectorAll(".gh");
-      const t = done === 0 ? BANNER : lines[done - 1];
+      const t = cursor === 0 ? BANNER : lines[cursor - 1];
       for (let k = 0; k < spans.length; k++) {
         if (k < input.length && input[k] === t[k]) {
           spans[k].classList.add("typed");
@@ -467,60 +471,76 @@
         }
       }
     }
+    // 注释行快进：当前若是 # 注释代码行，直接标 done 前进（不要求抄、直接展示）
+    function skipComments() {
+      while (cursor >= 1 && cursor <= lines.length && isComment(lines[cursor - 1])) cursor++;
+    }
     function renderStage() {
-      if (done >= 1 + lines.length) { finishCopy(); return; }
+      skipComments();
+      if (cursor >= 1 + lines.length) { finishCopy(); return; }
       let html = "";
       for (let i = 0; i < 1 + lines.length; i++) {
-        const stat = i < done ? "done" : (i === done ? "current" : "invisible");
+        const stat = i < cursor ? "done" : (i === cursor ? "current" : "invisible");
         const text = i === 0 ? BANNER : lines[i - 1];
-        html += `<div class="copy-line ${stat}" data-line="${i}">${ghostSpans(text, stat === "done")}</div>`;
+        const isCmt = i >= 1 && isComment(text); // # 注释行：直接展示、不染色
+        const caret = stat === "current" ? `<span class="caret" aria-hidden="true"></span>` : "";
+        html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${ghostSpans(text, stat === "done" && !isCmt)}${caret}</div>`;
       }
-      html += `
-        <textarea id="copyInput" class="code copy-input" rows="2" placeholder="逐字敲入，与上面模板对应字符会变成黑字加粗    回车提交    Tab = 4 空格缩进"></textarea>
-        <div id="copyMsg" class="copy-msg"></div>`;
+      html += `<input id="copyInput" class="copy-hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />`;
+      html += `<div id="copyMsg" class="copy-msg"></div>`;
       $stage.innerHTML = html;
-      $("copyProgress").textContent = `已抄 ${Math.max(0, done - 1)} 行 / 共 ${lines.length} 行`;
-      const ta = $("copyInput");
+      const isBanner = cursor === 0;
+      $("copyProgress").textContent = isBanner
+        ? `说明行（不用抄）· 共需抄 ${totalCopy} 行`
+        : `已抄 ${copied} 行 / 共 ${totalCopy} 行`;
+      const inp = $("copyInput");
       const lineEl = $stage.querySelector(".copy-line.current");
-      ta.focus();
+      inp.focus();
       lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
-      enableTab(ta); // ✅ Tab 缩进支持
-      ta.addEventListener("input", () => {
-        syncGhost(lineEl, ta.value);
+      // 失焦立即找回焦点（保持"在行里敲字"的体验）
+      inp.addEventListener("blur", () => { if (cursor < 1 + lines.length) inp.focus(); });
+      inp.addEventListener("input", () => {
+        syncGhost(lineEl, inp.value);
         $("copyMsg").textContent = "";
       });
-      ta.addEventListener("keydown", (e) => {
+      inp.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); checkLine(); }
+        else if (e.key === "Tab") { // 4 空格缩进
+          e.preventDefault();
+          inp.value += "    ";
+          syncGhost(lineEl, inp.value);
+        }
       });
     }
     function checkLine() {
       const lineEl = $stage.querySelector(".copy-line.current");
       const spans = lineEl ? lineEl.querySelectorAll(".gh") : [];
-      // 第 0 行是说明行（不用抄）：回车直接过，不要求匹配、不计入已抄
-      if (done === 0) {
-        spans.forEach((s) => { s.classList.add("typed"); });
+      // 说明行（i=0）：回车直接过，不要求匹配、不计入已抄
+      if (cursor === 0) {
+        spans.forEach((s) => s.classList.add("typed"));
         lineEl.classList.remove("current");
         lineEl.classList.add("done");
         API.event(p.id, state.stepIndex, "copy_line", { line: 0, ok: true, banner: true }).catch(() => {});
         const msg = $("copyMsg");
         msg.className = "copy-msg ok";
         msg.textContent = "✅ 看明白了，开始抄第一行代码吧～";
-        done++;
+        cursor++;
         setTimeout(renderStage, 180);
         return;
       }
-      const target = lines[done - 1];
+      const target = lines[cursor - 1];
       const input = $("copyInput").value;
       if (input === target) {
         // 整行匹配：所有 gh 落定为 .typed（黑加粗）；该行升 done，下一行从 invisible 浮为 current
         spans.forEach((s) => { s.classList.add("typed"); s.classList.remove("err"); });
         lineEl.classList.remove("current");
         lineEl.classList.add("done");
-        API.event(p.id, state.stepIndex, "copy_line", { line: done, ok: true }).catch(() => {});
+        API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: true }).catch(() => {});
         const msg = $("copyMsg");
         msg.className = "copy-msg ok";
         msg.textContent = "✅ 对啦，继续～";
-        done++;
+        copied++;
+        cursor++;
         setTimeout(renderStage, 220);
         return;
       }
@@ -534,7 +554,7 @@
       msg.textContent = (input.length !== target.length)
         ? `长度不一致：你输 ${input.length} 字，正确应为 ${target.length} 字（第 ${pos} 个字符起不同）`
         : `第 ${pos} 个字符没比对上，再看看上面那行～`;
-      API.event(p.id, state.stepIndex, "copy_line", { line: done, ok: false, pos }).catch(() => {});
+      API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: false, pos }).catch(() => {});
       setTimeout(() => {
         spans.forEach((s) => { s.classList.remove("err"); });
       }, 600);

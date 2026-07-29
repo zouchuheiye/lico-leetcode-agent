@@ -529,10 +529,25 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 
 /* 抄写页：逐行抄写（逐字比对） */
 .copy-progress { font-size: 13px; color: var(--honey-deep); font-weight: 600; margin-bottom: 8px; }
-.copy-input {
-  min-height: auto !important; height: 54px; border: 2px solid var(--line); background: #fffdf6;
+/* 隐藏输入框：接收键盘但视觉完全不可见，让"当前行"本身成为输入区 */
+.copy-hidden-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: 0; border: 0;
+  opacity: 0;
+  left: -9999px;
+  font-size: 16px;
 }
-.copy-input:focus { border-color: var(--honey); background: #fffef9; }
+/* 当前行的闪烁光标（示意"在此敲字"） */
+.copy-line.current .caret {
+  display: inline-block;
+  width: 2px; height: 1em;
+  background: var(--ink);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
 .copy-msg { font-size: 13px; min-height: 20px; margin-top: 8px; font-weight: 600; }
 .copy-msg.err { color: var(--red); }
 .copy-msg.ok { color: var(--green); }
@@ -640,6 +655,17 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 }
 .copy-line.current {
   background: rgba(230, 170, 40, 0.10);
+}
+/* # 注释行：直接展示、不参与描红，用灰色斜体提示"这是注释、不用抄" */
+.copy-line.comment .gh {
+  color: #9a8f7a;
+  font-style: italic;
+}
+.copy-line.comment .gh.typed {
+  color: #9a8f7a;
+  background: transparent;
+  font-weight: 400;
+  font-style: italic;
 }
 
 /* === 描红模板：每字符包成 .gh；未敲 → 浅色半透明；敲对 → 黑加粗蜂蜜；错 → 红 === */
