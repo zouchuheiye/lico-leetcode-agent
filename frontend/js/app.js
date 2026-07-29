@@ -394,19 +394,31 @@
       <pre class="code inc-hl"><code>${escapeHtml(inc)}</code></pre>
       <div class="audio-row" data-audio>
         <button class="btn small" data-act="listen">🔊 听第 ${i + 1} 步</button>
-        <button class="btn small ghost" data-act="read">🗣️ 朗读完进入下一步</button>
       </div>
       ${btn}`;
-    bindAudioRow($("workCard"), {
-      onListen: async () => {
+    // 讲解步骤页：只保留「听」按钮，去掉「🗣️ 朗读完进入下一步」跳过入口
+    const listenBtn = $("workCard").querySelector('[data-act="listen"]');
+    const originalLabel = listenBtn.textContent;
+    const STOPPED_LABEL = "🔇 不想听了";
+    listenBtn.dataset.listening = "";
+    listenBtn.onclick = async () => {
+      if (listenBtn.dataset.listening === "1") {
+        // 已在朗读 → 点击停止（清高亮 + 停语音）
+        Bee.stopHL();
+        listenBtn.textContent = originalLabel;
+        listenBtn.dataset.listening = "";
+        return;
+      }
+      listenBtn.textContent = STOPPED_LABEL;
+      listenBtn.dataset.listening = "1";
+      try {
         API.event(p.id, i, "listen_step");
         await Bee.speakHL(step.explanation, $("stepExplain"), {});
-      },
-      onReadDone: async () => {
-        API.event(p.id, i, "read_step");
-        toast(isLast ? "读完了～可以点「进抄写」开始最后整段抄写" : "读完了～可以点「看下一步」继续");
-      },
-    });
+      } finally {
+        listenBtn.textContent = originalLabel;
+        listenBtn.dataset.listening = "";
+      }
+    };
     $("nextStep").onclick = () => {
       if (isLast) renderCopy();
       else { state.stepIndex = i + 1; renderExplainSteps(); }
