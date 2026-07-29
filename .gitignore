@@ -18,3 +18,7 @@ start.log
 .codebuddy/
 .env
 .env.*
+
+# 临时/调试残留（运行期生成的 JSON，不应入库）
+tmp_steps_resp.json
+tmp_*.json
