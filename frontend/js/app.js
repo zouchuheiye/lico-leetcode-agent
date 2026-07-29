@@ -413,17 +413,15 @@
     };
   }
 
-  // 抄写页（描红式、单框草稿纸、所有行一次性注入、当前行即输入行）：
-  //   - 整个 .copy-card 就是一张草稿纸（蜂蜜边框 + 浅黄底），内部不再有独立卡片、也没有独立输入框。
-  //   - 草稿纸里纵向平铺 N+1 行：第 0 行是说明行，第 1..N 行是代码行。每行 .copy-line 一次性渲染、
-  //     所有 .gh 字符就位，行三态：
-  //       invisible = 同草稿纸底色（display:visible 但看不见，DOM 已占位，框高稳定）；
-  //       current   = 当前待敲行（浅色描红，且就是"输入行"——隐藏 #copyInput 聚焦在此行的 .gh 上）；
-  //       done      = 已敲完（字符黑加粗只读，留在纸内）。
-  //   - 用户在"当前行"里直接敲字（隐藏 input 接收键盘），匹配的 .gh 即时变 .typed（黑加粗蜂蜜背景），
-  //     错字符标 .err（红闪）。整行完全匹配回车 → 该行升 done，下一行从 invisible 浮为 current。
-  //   - # 注释行：不抄、直接展示（自动标 done 跳过，不计入"需抄行数"）。
-  //   - Tab 缩进由 keydown 手动插入 4 空格支持；空行直接回车即可。
+  // 抄写页（描红式、单框草稿纸、逐字变黑；已抄行常驻可见可点改，未抄行隐藏）：
+  //   - .copy-card 一张草稿纸，内部竖排 N+1 行：第 0 行说明，1..N 代码行。
+  //   - 行可见性按"已抄/未抄"判定：索引 > maxReached → invisible（未抄，看不见）；
+  //     === cursor → current（浅色描红 + 隐藏输入行）；其余已抄行 → done（黑字、可点回改）。
+  //   - 当前行：隐藏 #copyInput 接收键盘，敲过/敲对的字符变黑，没敲到的目标字符浅色（无报错、无比对阻断）。
+  //   - 回车：存下本行用户文本并前进（不检查对错）；若处于"点回改"临时状态，回车后跳回 maxReached 继续。
+  //   - 点击任意已抄代码行 → 临时进入该行编辑（载入已存文本），其余已抄行仍可见；回车回到最前行。
+  //   - # 注释行：不抄、直接展示（自动跳过，不计入需抄行数）。
+  //   - 右上角"📝 抄写完了"按钮：随时结束本题抄写。
   function renderCopy() {
     const p = state.problem;
     if (!p.steps || !p.steps.length) { toast("步骤还没生成"); return; }
@@ -433,25 +431,31 @@
     const BANNER = "# 该框用于描红抄写（这一行不用抄）";
     const isComment = (s) => s.trim().startsWith("#");
     const totalCopy = lines.filter((l) => !isComment(l)).length; // 需要抄的行数（注释不计入）
-    let cursor = 0; // 当前行索引：0 = 说明行；1..lines.length = 代码行
-    let copied = 0; // 用户已抄的非注释行数
+    let cursor = 0;        // 当前正在编辑的行
+    let maxReached = 0;    // 已抄到的最远行（<= 此索引的行全部可见）
+    const lineText = new Array(lines.length + 1).fill(null); // 每行用户实际敲的内容
     recordProgress("copy", state.stepIndex);
     setLayoutMode("single");
     const work = $("workCard");
     work.innerHTML = `
-      <div class="section-title">📝 抄写练习 · 描红</div>
-      <div class="copy-progress" id="copyProgress"></div>
+      <div class="copy-head">
+        <div class="section-title">📝 抄写练习 · 描红</div>
+        <div class="copy-head-right">
+          <span class="copy-progress" id="copyProgress"></span>
+          <button id="copyFinishBtn" class="copy-finish">📝 抄写完了</button>
+        </div>
+      </div>
       <div class="copy-card">
         <div class="copy-stage" id="copyStage"></div>
       </div>`;
     const $stage = $("copyStage");
-    // 把目标行拆成 .gh 字符 span；typed=true 时直接落 .typed（黑加粗）
-    function ghostSpans(target, typed) {
+    // 把目标行拆成 .gh 字符 span（浅色裸态，供逐字变黑覆盖）
+    function ghostSpans(target) {
       if (target === "") return `<span class="gh-empty">（空行）直接回车即可</span>`;
       let h = "";
       for (let k = 0; k < target.length; k++) {
         const ch = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-        h += `<span class="gh${typed ? " typed" : ""}" data-pos="${k}">${ch}</span>`;
+        h += `<span class="gh" data-pos="${k}">${ch}</span>`;
       }
       return h;
     }
@@ -462,47 +466,38 @@
       const caret = document.createElement("span");
       caret.className = "caret-blink";
       caret.setAttribute("aria-hidden", "true");
-      const glyphs = lineEl.querySelectorAll(".gh, .gh.extra");
+      const glyphs = lineEl.querySelectorAll(".gh");
       if (pos <= 0) lineEl.insertBefore(caret, lineEl.firstChild);
       else if (pos < glyphs.length) glyphs[pos].before(caret);
       else lineEl.appendChild(caret);
     }
-    // 同步描红：把隐藏 input.value 与当前行目标字符逐一比对
+    // 同步描红：只做"敲过的字符变黑、没敲到的目标字符浅色"，不比对、不报错、不阻断
     function syncGhost(lineEl, input) {
       const target = cursor === 0 ? BANNER : lines[cursor - 1];
       const spans = Array.from(lineEl.querySelectorAll(".gh"));
-      // 清掉上一轮"超长"追加的字符
-      lineEl.querySelectorAll(".gh.extra").forEach((s) => s.remove());
       for (let k = 0; k < spans.length; k++) {
-        const tCh = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-        const uCh = k < input.length ? input[k] : null;
-        if (uCh === null) {
-          // 还没敲到：浅色裸态
-          spans[k].classList.remove("typed", "err");
-          spans[k].innerHTML = tCh;
-        } else if (uCh === target[k]) {
-          // 敲对：黑加粗，文字仍是模板字符
+        const tCh = target[k] === " " ? "&nbsp;" : escapeHtml(target[k] ?? "");
+        if (k < input.length) {
+          // 用户已敲此位：显示其实际字符，黑色加粗（覆盖浅色目标）
           spans[k].classList.add("typed");
-          spans[k].classList.remove("err");
-          spans[k].innerHTML = tCh;
+          spans[k].innerHTML = input[k] === " " ? "&nbsp;" : escapeHtml(input[k]);
         } else {
-          // 敲错：显示【用户实际敲的字符】红色加粗 + 角标提示【期望字符】
-          spans[k].classList.add("err");
+          // 尚未敲到：恢复为浅色目标字
           spans[k].classList.remove("typed");
-          spans[k].innerHTML = `${escapeHtml(uCh)}<sub class="err-hint">${tCh}</sub>`;
+          spans[k].innerHTML = tCh;
         }
       }
-      // 长度超出：把多敲的字符追加到行末，并角标"超"
+      // 敲超长：把多敲的字符追加到行末（黑色），保持可见
       if (input.length > target.length) {
         let extra = "";
         for (let k = target.length; k < input.length; k++) {
-          extra += `<span class="gh extra">${escapeHtml(input[k])}<sub class="err-hint">超</sub></span>`;
+          extra += `<span class="gh typed">${input[k] === " " ? "&nbsp;" : escapeHtml(input[k])}</span>`;
         }
         lineEl.insertAdjacentHTML("beforeend", extra);
       }
       moveCaret(lineEl, input.length);
     }
-    // 注释行快进：当前若是 # 注释代码行，直接标 done 前进（不要求抄、直接展示）
+    // 注释行快进：当前若是 # 注释代码行，直接前进（不要求抄、直接展示）
     function skipComments() {
       while (cursor >= 1 && cursor <= lines.length && isComment(lines[cursor - 1])) cursor++;
     }
@@ -511,31 +506,42 @@
       if (cursor >= 1 + lines.length) { finishCopy(); return; }
       let html = "";
       for (let i = 0; i < 1 + lines.length; i++) {
-        const stat = i < cursor ? "done" : (i === cursor ? "current" : "invisible");
         const text = i === 0 ? BANNER : lines[i - 1];
-        const isCmt = i >= 1 && isComment(text); // # 注释行：直接展示、不染色
-        html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${ghostSpans(text, stat === "done" && !isCmt)}</div>`;
+        const isCmt = i >= 1 && isComment(text);
+        let stat, inner;
+        if (i > maxReached) stat = "invisible";   // 未抄到的未来行：看不见
+        else if (i === cursor) stat = "current";  // 当前编辑行：浅色描红
+        else stat = "done";                        // 已抄行：黑字常驻
+        if (i === cursor) {
+          inner = ghostSpans(text);                // 当前行：浅色目标，待逐字变黑
+        } else if (isCmt) {
+          inner = escapeHtml(text);                // 注释行：直接展示
+        } else {
+          inner = escapeHtml(i === 0 ? BANNER : (lineText[i] != null ? lineText[i] : text)); // 已抄行：用户实际敲的黑字
+        }
+        html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${inner}</div>`;
       }
       html += `<input id="copyInput" class="copy-hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />`;
       html += `<div id="copyMsg" class="copy-msg"></div>`;
       $stage.innerHTML = html;
-      const isBanner = cursor === 0;
-      $("copyProgress").textContent = isBanner
+      // 进度：已抄 = 已抄到最远行之前的非注释代码行数
+      const copied = lines.slice(0, Math.max(0, maxReached - 1)).filter((l) => !isComment(l)).length;
+      $("copyProgress").textContent = cursor === 0
         ? `说明行（不用抄）· 共需抄 ${totalCopy} 行`
         : `已抄 ${copied} 行 / 共 ${totalCopy} 行`;
       const inp = $("copyInput");
       const lineEl = $stage.querySelector(".copy-line.current");
+      inp.value = lineText[cursor] != null ? lineText[cursor] : ""; // 载入已存文本（含点回改时）
       inp.focus();
       lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
-      syncGhost(lineEl, ""); // 初始化：光标落在当前行首
-      // 失焦立即找回焦点（保持"在行里敲字"的体验）
+      syncGhost(lineEl, inp.value);
       inp.addEventListener("blur", () => { if (cursor < 1 + lines.length) inp.focus(); });
       inp.addEventListener("input", () => {
         syncGhost(lineEl, inp.value);
         $("copyMsg").textContent = "";
       });
       inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); checkLine(); }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitLine(); }
         else if (e.key === "Tab") { // 4 空格缩进
           e.preventDefault();
           inp.value += "    ";
@@ -543,58 +549,34 @@
         }
       });
     }
-    function checkLine() {
-      const lineEl = $stage.querySelector(".copy-line.current");
-      const spans = lineEl ? lineEl.querySelectorAll(".gh") : [];
-      // 说明行（i=0）：回车直接过，不要求匹配、不计入已抄
-      if (cursor === 0) {
-        spans.forEach((s) => s.classList.add("typed"));
-        lineEl.classList.remove("current");
-        lineEl.classList.add("done");
-        API.event(p.id, state.stepIndex, "copy_line", { line: 0, ok: true, banner: true }).catch(() => {});
-        const msg = $("copyMsg");
-        msg.className = "copy-msg ok";
-        msg.textContent = "✅ 看明白了，开始抄第一行代码吧～";
+    // 回车：存本行文本并前进（不比对、不报错）；临时点回改时回车跳回最前行
+    function commitLine() {
+      lineText[cursor] = $("copyInput").value;
+      API.event(p.id, state.stepIndex, "copy_line", { line: cursor, text: lineText[cursor] }).catch(() => {});
+      if (cursor === 0) { // 说明行：直接过
+        lineText[0] = BANNER;
+        cursor = 1; maxReached = Math.max(maxReached, 1); renderStage(); return;
+      }
+      const inDetour = cursor < maxReached; // 正处于"点回改"临时状态
+      if (inDetour) {
+        cursor = maxReached; // 回到最前行继续
+      } else {
         cursor++;
-        setTimeout(renderStage, 180);
-        return;
+        while (cursor >= 1 && cursor <= lines.length && isComment(lines[cursor - 1])) cursor++; // 跳过注释
+        maxReached = Math.max(maxReached, cursor);
       }
-      const target = lines[cursor - 1];
-      const input = $("copyInput").value;
-      if (input === target) {
-        // 整行匹配：所有 gh 落定为 .typed（黑加粗）；该行升 done，下一行从 invisible 浮为 current
-        for (let k = 0; k < spans.length; k++) {
-          spans[k].classList.add("typed");
-          spans[k].classList.remove("err");
-          spans[k].innerHTML = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-        }
-        lineEl.classList.remove("current");
-        lineEl.classList.add("done");
-        API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: true }).catch(() => {});
-        const msg = $("copyMsg");
-        msg.className = "copy-msg ok";
-        msg.textContent = "✅ 对啦，继续～";
-        copied++;
-        cursor++;
-        setTimeout(renderStage, 220);
-        return;
-      }
-      // 失败：整行回退成裸态（用户实际敲的字符已可见），提示第几个字符错
-      for (let k = 0; k < spans.length; k++) {
-        spans[k].classList.remove("typed", "err");
-        spans[k].innerHTML = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-      }
-      lineEl.querySelectorAll(".gh.extra").forEach((s) => s.remove());
-      const n = Math.min(target.length, input.length);
-      let pos = n + 1;
-      for (let k = 0; k < n; k++) { if (target[k] !== input[k]) { pos = k + 1; break; } }
-      const msg = $("copyMsg");
-      msg.className = "copy-msg err";
-      msg.textContent = (input.length !== target.length)
-        ? `长度不一致：你输 ${input.length} 字，正确应为 ${target.length} 字（第 ${pos} 个字符起不同）`
-        : `第 ${pos} 个字符没比对上，再看看上面那行～`;
-      API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: false, pos }).catch(() => {});
+      renderStage();
     }
+    // 点击已抄代码行 → 临时进入该行编辑（其余已抄行仍可见）
+    $stage.addEventListener("click", (e) => {
+      const el = e.target.closest(".copy-line.done");
+      if (!el || el.classList.contains("comment")) return;
+      const i = +el.dataset.line;
+      if (i === cursor || i > maxReached) return;
+      cursor = i; // 进入临时编辑；maxReached 不变，故其余已抄行保持可见
+      renderStage();
+    });
+    $("copyFinishBtn").onclick = () => finishCopy();
     renderStage();
   }
 

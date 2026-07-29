@@ -528,7 +528,15 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .learn-grid.single-col .work-card { max-width: 1000px; }
 
 /* 抄写页：逐行抄写（逐字比对） */
-.copy-progress { font-size: 13px; color: var(--honey-deep); font-weight: 600; margin-bottom: 8px; }
+.copy-progress { font-size: 13px; color: var(--honey-deep); font-weight: 600; margin-bottom: 0; }
+/* 抄写页头部：标题左、进度+收尾按钮右 */
+.copy-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.copy-head-right { display: flex; align-items: center; gap: 12px; }
+.copy-finish {
+  font-size: 13px; padding: 6px 14px; border: 1px solid var(--honey-deep);
+  border-radius: 8px; background: #FAEEDA; color: #633806; cursor: pointer; font-weight: 600;
+}
+.copy-finish:hover { background: #FAC775; }
 /* 隐藏输入框：接收键盘但视觉完全不可见，让"当前行"本身成为输入区 */
 .copy-hidden-input {
   position: absolute;
@@ -642,7 +650,13 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   display: none;
 }
 .copy-line.done {
-  pointer-events: none;
+  cursor: default;
+}
+.copy-line.done:not(.comment) {
+  cursor: pointer;
+}
+.copy-line.done:not(.comment):hover {
+  background: rgba(99, 153, 34, 0.12);
 }
 .copy-line.current {
   background: rgba(230, 170, 40, 0.10);
