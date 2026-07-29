@@ -308,7 +308,8 @@
       <div class="section-title">💡 讲解</div>
       <div class="explain-text" id="explainBody">${escapeHtml(explanation)}</div>
       ${AUDIO_ROW("开始听例子")}
-      ${LANG_PICKER}`;
+      ${LANG_PICKER}
+      <button class="btn ghost" id="backToProblem">← 返回题目</button>`;
     // 重新绑定语言选择器（DOM 重建后）
     bindLangPicker();
     bindAudioRow($("workCard"), {
@@ -324,6 +325,11 @@
         goSteps();
       },
     });
+    $("backToProblem").onclick = () => {
+      setLayoutMode("problem");
+      renderProblemCard(state.problem);
+      $("workCard").innerHTML = `<div class="work-placeholder">先听题、朗读题目，熟悉之后我来讲解～</div>`;
+    };
   }
 
   // ---------------------------------------------------------- 分步手撕
@@ -386,6 +392,9 @@
     const btn = isLast
       ? `<button class="btn primary step-finish" id="nextStep">📖 看这步懂了，进抄写 →</button>`
       : `<button class="btn primary step-finish" id="nextStep">👉 看这步懂了，看下一步 →</button>`;
+    const backBtn = i === 0
+      ? `<button class="btn ghost" id="backToExample">← 返回举例</button>`
+      : "";
     $("workCard").innerHTML = `
       ${stepDots(i)}
       <div class="section-title">🧩 第 ${i + 1} 步：${escapeHtml(step.title || "")}</div>
@@ -395,7 +404,7 @@
       <div class="audio-row" data-audio>
         <button class="btn small" data-act="listen">🔊 听第 ${i + 1} 步</button>
       </div>
-      ${btn}`;
+      ${btn}${backBtn}`;
     // 讲解步骤页：只保留「听」按钮，去掉「🗣️ 朗读完进入下一步」跳过入口
     const listenBtn = $("workCard").querySelector('[data-act="listen"]');
     const originalLabel = listenBtn.textContent;
@@ -423,6 +432,9 @@
       if (isLast) renderCopy();
       else { state.stepIndex = i + 1; renderExplainSteps(); }
     };
+    if (i === 0) {
+      $("backToExample").onclick = () => renderExplain(state.problem.explanation);
+    }
   }
 
   // 抄写页（描红式、单框草稿纸、逐字变黑；已抄行常驻可见可点改，未抄行隐藏）：
@@ -453,6 +465,7 @@
         <div class="section-title">📝 抄写练习 · 描红</div>
         <div class="copy-head-right">
           <span class="copy-progress" id="copyProgress"></span>
+          <button id="copyBackBtn" class="copy-back">← 返回讲解</button>
           <button id="copyFinishBtn" class="copy-finish">📝 抄写完了</button>
         </div>
       </div>
@@ -582,6 +595,7 @@
       renderStage();
     });
     $("copyFinishBtn").onclick = () => finishCopy();
+    $("copyBackBtn").onclick = () => renderExplainSteps();
     renderStage();
   }
 

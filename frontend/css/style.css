@@ -537,6 +537,11 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   border-radius: 8px; background: #FAEEDA; color: #633806; cursor: pointer; font-weight: 600;
 }
 .copy-finish:hover { background: #FAC775; }
+.copy-back {
+  font-size: 13px; padding: 6px 14px; border: 1px solid var(--honey);
+  border-radius: 8px; background: #fffdf6; color: var(--honey-deep); cursor: pointer; font-weight: 600;
+}
+.copy-back:hover { background: #fff6df; }
 /* 隐藏输入框：接收键盘但视觉完全不可见，让"当前行"本身成为输入区 */
 .copy-hidden-input {
   position: absolute;
