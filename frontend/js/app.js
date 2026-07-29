@@ -582,6 +582,19 @@
         cursor++;
         while (cursor < lines.length && isComment(lines[cursor])) cursor++; // 跳过注释
         maxReached = Math.max(maxReached, cursor);
+        // 自动缩进：新行若是代码行，预填与"最近代码行"一致的缩进；块头行（行尾是 ":"）再加一级 4 空格
+        if (cursor < lines.length && !isComment(lines[cursor])) {
+          let refIdx = cursor - 1;
+          while (refIdx >= 0 && isComment(lines[refIdx])) refIdx--; // 跳过上方注释行
+          const refText = (refIdx >= 0 && lineText[refIdx] != null)
+            ? lineText[refIdx]
+            : (refIdx >= 0 ? lines[refIdx] : "");
+          let indent = (refText.match(/^(\s*)/) || ["", ""])[1];
+          // 块头识别：trimEnd 后以 ":" 结尾、且不是 # 注释行（避免字符串里的冒号被误判）
+          const isBlockHeader = !refText.trimStart().startsWith("#") && refText.trimEnd().endsWith(":");
+          if (isBlockHeader) indent += "    ";
+          lineText[cursor] = indent;
+        }
       }
       renderStage();
     }
