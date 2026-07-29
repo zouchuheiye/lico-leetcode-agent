@@ -455,21 +455,52 @@
       }
       return h;
     }
+    // 把光标插到当前行的第 pos 个字符之前（pos<=0 行首，pos>=字符数 行末）
+    function moveCaret(lineEl, pos) {
+      const old = lineEl.querySelector(".caret-blink");
+      if (old) old.remove();
+      const caret = document.createElement("span");
+      caret.className = "caret-blink";
+      caret.setAttribute("aria-hidden", "true");
+      const glyphs = lineEl.querySelectorAll(".gh, .gh.extra");
+      if (pos <= 0) lineEl.insertBefore(caret, lineEl.firstChild);
+      else if (pos < glyphs.length) glyphs[pos].before(caret);
+      else lineEl.appendChild(caret);
+    }
     // 同步描红：把隐藏 input.value 与当前行目标字符逐一比对
     function syncGhost(lineEl, input) {
-      const spans = lineEl.querySelectorAll(".gh");
-      const t = cursor === 0 ? BANNER : lines[cursor - 1];
+      const target = cursor === 0 ? BANNER : lines[cursor - 1];
+      const spans = Array.from(lineEl.querySelectorAll(".gh"));
+      // 清掉上一轮"超长"追加的字符
+      lineEl.querySelectorAll(".gh.extra").forEach((s) => s.remove());
       for (let k = 0; k < spans.length; k++) {
-        if (k < input.length && input[k] === t[k]) {
+        const tCh = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
+        const uCh = k < input.length ? input[k] : null;
+        if (uCh === null) {
+          // 还没敲到：浅色裸态
+          spans[k].classList.remove("typed", "err");
+          spans[k].innerHTML = tCh;
+        } else if (uCh === target[k]) {
+          // 敲对：黑加粗，文字仍是模板字符
           spans[k].classList.add("typed");
           spans[k].classList.remove("err");
-        } else if (k < input.length) {
+          spans[k].innerHTML = tCh;
+        } else {
+          // 敲错：显示【用户实际敲的字符】红色加粗 + 角标提示【期望字符】
           spans[k].classList.add("err");
           spans[k].classList.remove("typed");
-        } else {
-          spans[k].classList.remove("typed", "err");
+          spans[k].innerHTML = `${escapeHtml(uCh)}<sub class="err-hint">${tCh}</sub>`;
         }
       }
+      // 长度超出：把多敲的字符追加到行末，并角标"超"
+      if (input.length > target.length) {
+        let extra = "";
+        for (let k = target.length; k < input.length; k++) {
+          extra += `<span class="gh extra">${escapeHtml(input[k])}<sub class="err-hint">超</sub></span>`;
+        }
+        lineEl.insertAdjacentHTML("beforeend", extra);
+      }
+      moveCaret(lineEl, input.length);
     }
     // 注释行快进：当前若是 # 注释代码行，直接标 done 前进（不要求抄、直接展示）
     function skipComments() {
@@ -483,8 +514,7 @@
         const stat = i < cursor ? "done" : (i === cursor ? "current" : "invisible");
         const text = i === 0 ? BANNER : lines[i - 1];
         const isCmt = i >= 1 && isComment(text); // # 注释行：直接展示、不染色
-        const caret = stat === "current" ? `<span class="caret" aria-hidden="true"></span>` : "";
-        html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${ghostSpans(text, stat === "done" && !isCmt)}${caret}</div>`;
+        html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${ghostSpans(text, stat === "done" && !isCmt)}</div>`;
       }
       html += `<input id="copyInput" class="copy-hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />`;
       html += `<div id="copyMsg" class="copy-msg"></div>`;
@@ -497,6 +527,7 @@
       const lineEl = $stage.querySelector(".copy-line.current");
       inp.focus();
       lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
+      syncGhost(lineEl, ""); // 初始化：光标落在当前行首
       // 失焦立即找回焦点（保持"在行里敲字"的体验）
       inp.addEventListener("blur", () => { if (cursor < 1 + lines.length) inp.focus(); });
       inp.addEventListener("input", () => {
@@ -532,7 +563,11 @@
       const input = $("copyInput").value;
       if (input === target) {
         // 整行匹配：所有 gh 落定为 .typed（黑加粗）；该行升 done，下一行从 invisible 浮为 current
-        spans.forEach((s) => { s.classList.add("typed"); s.classList.remove("err"); });
+        for (let k = 0; k < spans.length; k++) {
+          spans[k].classList.add("typed");
+          spans[k].classList.remove("err");
+          spans[k].innerHTML = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
+        }
         lineEl.classList.remove("current");
         lineEl.classList.add("done");
         API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: true }).catch(() => {});
@@ -544,8 +579,12 @@
         setTimeout(renderStage, 220);
         return;
       }
-      // 失败：整段 .err 闪 600ms 再复位（让用户看清错位）
-      spans.forEach((s) => { s.classList.add("err"); s.classList.remove("typed"); });
+      // 失败：整行回退成裸态（用户实际敲的字符已可见），提示第几个字符错
+      for (let k = 0; k < spans.length; k++) {
+        spans[k].classList.remove("typed", "err");
+        spans[k].innerHTML = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
+      }
+      lineEl.querySelectorAll(".gh.extra").forEach((s) => s.remove());
       const n = Math.min(target.length, input.length);
       let pos = n + 1;
       for (let k = 0; k < n; k++) { if (target[k] !== input[k]) { pos = k + 1; break; } }
@@ -555,9 +594,6 @@
         ? `长度不一致：你输 ${input.length} 字，正确应为 ${target.length} 字（第 ${pos} 个字符起不同）`
         : `第 ${pos} 个字符没比对上，再看看上面那行～`;
       API.event(p.id, state.stepIndex, "copy_line", { line: cursor, ok: false, pos }).catch(() => {});
-      setTimeout(() => {
-        spans.forEach((s) => { s.classList.remove("err"); });
-      }, 600);
     }
     renderStage();
   }

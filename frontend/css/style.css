@@ -538,16 +538,7 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   left: -9999px;
   font-size: 16px;
 }
-/* 当前行的闪烁光标（示意"在此敲字"） */
-.copy-line.current .caret {
-  display: inline-block;
-  width: 2px; height: 1em;
-  background: var(--ink);
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  animation: caret-blink 1s steps(2, start) infinite;
-}
-@keyframes caret-blink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+/* 当前行的提示信息 */
 .copy-msg { font-size: 13px; min-height: 20px; margin-top: 8px; font-weight: 600; }
 .copy-msg.err { color: var(--red); }
 .copy-msg.ok { color: var(--green); }
@@ -690,6 +681,36 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   color: var(--red);
   background: #ffe0d6;
   font-weight: 700;
+  padding: 0 1px;
+}
+.gh.extra {
+  color: var(--red);
+  background: #ffe0d6;
+  border: 1px dashed #d23;
+  border-radius: 2px;
+  font-weight: 700;
+}
+/* 错字符角标：显示"期望字符"，不抢视觉 */
+.err-hint {
+  font-size: 0.55em;
+  color: rgba(0, 0, 0, 0.45);
+  font-style: italic;
+  vertical-align: sub;
+  margin-left: 1px;
+  font-weight: 400;
+}
+/* 闪烁光标：每敲一字右移 1 字符宽，精准提示"现在该敲第几个字符" */
+.caret-blink {
+  display: inline-block;
+  width: 1px;
+  height: 1.05em;
+  background: var(--ink);
+  margin: 0 -1px;
+  vertical-align: text-bottom;
+  animation: caret-blink 1s steps(1, end) infinite;
+}
+@keyframes caret-blink {
+  50% { opacity: 0; }
 }
 .gh-empty {
   color: rgba(76, 55, 35, 0.5);
