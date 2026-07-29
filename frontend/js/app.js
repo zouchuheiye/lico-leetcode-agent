@@ -414,7 +414,7 @@
   }
 
   // 抄写页（描红式、单框草稿纸、逐字变黑；已抄行常驻可见可点改，未抄行隐藏）：
-  //   - .copy-card 一张草稿纸，内部竖排 N+1 行：第 0 行说明，1..N 代码行。
+  //   - .copy-card 一张草稿纸，内部竖排 N 行代码行（无说明行、无 banner，直接开始抄）。
   //   - 行可见性按"已抄/未抄"判定：索引 > maxReached → invisible（未抄，看不见）；
   //     === cursor → current（浅色描红 + 隐藏输入行）；其余已抄行 → done（黑字、可点回改）。
   //   - 当前行：隐藏 #copyInput 接收键盘，敲过/敲对的字符变黑，没敲到的目标字符浅色（无报错、无比对阻断）。
@@ -428,12 +428,11 @@
     const last = p.steps[p.steps.length - 1];
     const full = (last.code || last.incremental_code || "").replace(/\s+$/, "");
     const lines = full.split("\n");
-    const BANNER = "# 该框用于描红抄写（这一行不用抄）";
     const isComment = (s) => s.trim().startsWith("#");
     const totalCopy = lines.filter((l) => !isComment(l)).length; // 需要抄的行数（注释不计入）
-    let cursor = 0;        // 当前正在编辑的行
-    let maxReached = 0;    // 已抄到的最远行（<= 此索引的行全部可见）
-    const lineText = new Array(lines.length + 1).fill(null); // 每行用户实际敲的内容
+    let cursor = 0;        // 当前正在编辑的行（lines 数组 0-based 索引）
+    let maxReached = 0;    // 已抄到的最远 lines 索引（初始 0 → 第一行直接 current 可抄）
+    const lineText = new Array(lines.length).fill(null); // 每行用户实际敲的内容
     recordProgress("copy", state.stepIndex);
     setLayoutMode("single");
     const work = $("workCard");
@@ -473,7 +472,7 @@
     }
     // 同步描红：只做"敲过的字符变黑、没敲到的目标字符浅色"，不比对、不报错、不阻断
     function syncGhost(lineEl, input) {
-      const target = cursor === 0 ? BANNER : lines[cursor - 1];
+      const target = lines[cursor];
       const spans = Array.from(lineEl.querySelectorAll(".gh"));
       for (let k = 0; k < spans.length; k++) {
         const tCh = target[k] === " " ? "&nbsp;" : escapeHtml(target[k] ?? "");
@@ -499,15 +498,15 @@
     }
     // 注释行快进：当前若是 # 注释代码行，直接前进（不要求抄、直接展示）
     function skipComments() {
-      while (cursor >= 1 && cursor <= lines.length && isComment(lines[cursor - 1])) cursor++;
+      while (cursor < lines.length && isComment(lines[cursor])) cursor++;
     }
     function renderStage() {
       skipComments();
-      if (cursor >= 1 + lines.length) { finishCopy(); return; }
+      if (cursor >= lines.length) { finishCopy(); return; }
       let html = "";
-      for (let i = 0; i < 1 + lines.length; i++) {
-        const text = i === 0 ? BANNER : lines[i - 1];
-        const isCmt = i >= 1 && isComment(text);
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        const isCmt = isComment(text);
         let stat, inner;
         if (i > maxReached) stat = "invisible";   // 未抄到的未来行：看不见
         else if (i === cursor) stat = "current";  // 当前编辑行：浅色描红
@@ -517,7 +516,7 @@
         } else if (isCmt) {
           inner = escapeHtml(text);                // 注释行：直接展示
         } else {
-          inner = escapeHtml(i === 0 ? BANNER : (lineText[i] != null ? lineText[i] : text)); // 已抄行：用户实际敲的黑字
+          inner = escapeHtml(lineText[i] != null ? lineText[i] : text); // 已抄行：用户实际敲的黑字
         }
         html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${inner}</div>`;
       }
@@ -525,17 +524,15 @@
       html += `<div id="copyMsg" class="copy-msg"></div>`;
       $stage.innerHTML = html;
       // 进度：已抄 = 已抄到最远行之前的非注释代码行数
-      const copied = lines.slice(0, Math.max(0, maxReached - 1)).filter((l) => !isComment(l)).length;
-      $("copyProgress").textContent = cursor === 0
-        ? `说明行（不用抄）· 共需抄 ${totalCopy} 行`
-        : `已抄 ${copied} 行 / 共 ${totalCopy} 行`;
+      const copied = lines.slice(0, Math.max(0, maxReached)).filter((l) => !isComment(l)).length;
+      $("copyProgress").textContent = `已抄 ${copied} 行 / 共 ${totalCopy} 行`;
       const inp = $("copyInput");
       const lineEl = $stage.querySelector(".copy-line.current");
       inp.value = lineText[cursor] != null ? lineText[cursor] : ""; // 载入已存文本（含点回改时）
       inp.focus();
       lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
       syncGhost(lineEl, inp.value);
-      inp.addEventListener("blur", () => { if (cursor < 1 + lines.length) inp.focus(); });
+      inp.addEventListener("blur", () => { if (cursor < lines.length) inp.focus(); });
       inp.addEventListener("input", () => {
         syncGhost(lineEl, inp.value);
         $("copyMsg").textContent = "";
@@ -553,16 +550,12 @@
     function commitLine() {
       lineText[cursor] = $("copyInput").value;
       API.event(p.id, state.stepIndex, "copy_line", { line: cursor, text: lineText[cursor] }).catch(() => {});
-      if (cursor === 0) { // 说明行：直接过
-        lineText[0] = BANNER;
-        cursor = 1; maxReached = Math.max(maxReached, 1); renderStage(); return;
-      }
       const inDetour = cursor < maxReached; // 正处于"点回改"临时状态
       if (inDetour) {
         cursor = maxReached; // 回到最前行继续
       } else {
         cursor++;
-        while (cursor >= 1 && cursor <= lines.length && isComment(lines[cursor - 1])) cursor++; // 跳过注释
+        while (cursor < lines.length && isComment(lines[cursor])) cursor++; // 跳过注释
         maxReached = Math.max(maxReached, cursor);
       }
       renderStage();
