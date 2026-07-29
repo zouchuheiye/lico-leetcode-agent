@@ -15,6 +15,13 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_MODEL_LABEL = "DeepSeek-V4"
 
+# 服务商预设：前端选择后自动预填 Base URL 与默认模型名
+PROVIDER_PRESETS = {
+    "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "openai":   {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "model": "gpt-4o"},
+    "custom":   {"label": "自定义（OpenAI 兼容）", "base_url": "", "model": ""},
+}
+
 # 一趟学习之旅的总题量
 TOTAL_PROBLEMS = 100
 

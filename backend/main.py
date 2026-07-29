@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 import agents
 import storage
-from config import DEEPSEEK_MODEL_LABEL, FRONTEND_DIR, TOTAL_PROBLEMS
+from config import DEEPSEEK_MODEL_LABEL, DEEPSEEK_MODEL, FRONTEND_DIR, TOTAL_PROBLEMS, PROVIDER_PRESETS
 
 app = FastAPI(title="Lico 力扣手撕辅导 Agent")
 app.add_middleware(
@@ -31,6 +31,14 @@ def _startup():
 # ------------------------------------------------------------ 数据模型
 class KeyBody(BaseModel):
     api_key: str
+
+
+class ConfigSaveBody(BaseModel):
+    provider: str = "deepseek"
+    base_url: str = ""
+    model_name: str = ""
+    api_key: str = ""
+    language: str = "python"
 
 
 class StartBody(BaseModel):
@@ -66,13 +74,34 @@ def _key() -> str:
 @app.get("/api/status")
 def status():
     cur = storage.get_current_problem()
+    provider = storage.get_config("model_provider") or "deepseek"
+    base_url = storage.get_config("model_base_url") or ""
+    model_name = storage.get_config("model_name") or DEEPSEEK_MODEL
+    language = storage.get_config("model_language") or "python"
+    model_label = model_name or DEEPSEEK_MODEL_LABEL
     return {
         "configured": bool(_key()),
-        "model_label": DEEPSEEK_MODEL_LABEL,
+        "model_label": model_label,
+        "provider": provider,
+        "base_url": base_url,
+        "model_name": model_name,
+        "language": language,
         "done_count": storage.count_done(),
         "total": TOTAL_PROBLEMS,
         "next_seq": storage.next_seq_to_learn(),
         "resume_seq": cur["seq"] if cur else None,
+    }
+
+
+@app.get("/api/config")
+def get_config():
+    """返回当前模型配置（不回传明文 Key，仅告知是否已保存）。"""
+    return {
+        "provider": storage.get_config("model_provider") or "deepseek",
+        "base_url": storage.get_config("model_base_url") or "",
+        "model_name": storage.get_config("model_name") or "",
+        "language": storage.get_config("model_language") or "python",
+        "has_key": bool(_key()),
     }
 
 
@@ -83,6 +112,29 @@ def config_test(body: KeyBody):
     if result.get("ok"):
         storage.set_config("deepseek_key", body.api_key.strip())
     return result
+
+
+@app.post("/api/config/save")
+def config_save(body: ConfigSaveBody):
+    """保存完整模型配置：解析 Base URL/模型名 -> 测连 -> 落 config 表。"""
+    preset = PROVIDER_PRESETS.get(body.provider, PROVIDER_PRESETS["custom"])
+    base_url = body.base_url.strip() or preset["base_url"]
+    model_name = body.model_name.strip() or preset["model"]
+    if not base_url or not model_name:
+        return {"ok": False, "error": "请填写 Base URL 与模型名（或选择有预设的服务商）。"}
+    # Key：传入优先，否则沿用已保存
+    api_key = body.api_key.strip() or _key()
+    if not api_key:
+        return {"ok": False, "error": "请填写 API Key。"}
+    result = agents.test_connection(api_key, base_url, model_name)
+    if not result.get("ok"):
+        return result
+    storage.set_config("model_provider", body.provider)
+    storage.set_config("model_base_url", base_url)
+    storage.set_config("model_name", model_name)
+    storage.set_config("model_language", body.language)
+    storage.set_config("deepseek_key", api_key)
+    return {"ok": True, "model_label": model_name or DEEPSEEK_MODEL_LABEL}
 
 
 # ------------------------------------------------------------ 学习流程
@@ -104,7 +156,10 @@ def learn_start(body: StartBody):
         return {"finished": True}
     problem = storage.get_problem_by_seq(seq)
     if problem is None:
-        content = agents.gen_problem(_key(), seq, body.language)
+        try:
+            content = agents.gen_problem(_key(), seq, body.language)
+        except agents.AgentError as e:
+            raise HTTPException(status_code=502, detail=str(e))
         problem = storage.create_problem(
             seq=seq,
             slug=content["slug"],
@@ -128,7 +183,10 @@ def learn_explain(body: ProblemBody):
         raise HTTPException(404, "题目不存在")
     if problem.get("explanation"):
         return {"explanation": problem["explanation"]}
-    explanation = agents.gen_explanation(_key(), problem, body.language)
+    try:
+        explanation = agents.gen_explanation(_key(), problem, body.language)
+    except agents.AgentError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     storage.save_explanation(problem["id"], explanation)
     storage.add_event(problem["id"], -1, "explanation_generated", None)
     return {"explanation": explanation}
@@ -141,7 +199,10 @@ def learn_steps(body: ProblemBody):
         raise HTTPException(404, "题目不存在")
     if problem.get("steps"):
         return {"steps": problem["steps"]}
-    steps = agents.gen_steps(_key(), problem, body.language)
+    try:
+        steps = agents.gen_steps(_key(), problem, problem.get("explanation") or "", body.language)
+    except agents.AgentError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     storage.save_steps(problem["id"], steps)
     storage.add_event(problem["id"], -1, "steps_generated", {"count": len(steps)})
     return {"steps": steps}
@@ -158,7 +219,10 @@ def learn_review(body: ReviewBody):
             if s["index"] == body.step_index:
                 step = s
                 break
-    review = agents.review_code(_key(), problem, step, body.code, body.is_final, body.language)
+    try:
+        review = agents.review_code(_key(), problem, step, body.code, body.is_final, body.language)
+    except agents.AgentError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     saved = storage.add_submission(problem["id"], body.step_index, body.code, review)
     storage.add_event(problem["id"], body.step_index, "code_reviewed",
                       {"severity": saved["severity"], "passed": saved["passed"]})

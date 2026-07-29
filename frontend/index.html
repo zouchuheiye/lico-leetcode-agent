@@ -22,6 +22,8 @@
       </div>
       <button class="btn ghost" id="btnArchive">📚 已做题集</button>
       <div class="model-badge" id="modelBadge">DeepSeek-V4</div>
+      <button class="btn ghost" id="btnRecall" data-mode="recall" title="打开默写版，凭记忆默写做过的题">📝 默写版</button>
+      <button class="btn ghost" id="btnModelConfig" data-mode="config" title="配置使用的模型">⚙️ 配置模型</button>
     </div>
   </header>
 
@@ -29,7 +31,6 @@
   <div id="stage" class="stage">
     <svg id="beeSvg" class="bee hidden" viewBox="0 0 220 200" aria-label="木偶蜜蜂 lico"></svg>
     <div id="speech" class="speech hidden"></div>
-    <div id="handHint" class="hand-hint hidden">👆</div>
   </div>
 
   <!-- ============ 配置页 ============ -->
@@ -71,8 +72,7 @@
         <button class="reveal-btn" id="pRevealBtn" type="button" aria-expanded="false">📚 查看示例与约束 ▾</button>
         <div class="audio-row" id="problemAudio" data-audio>
           <button class="btn small" data-act="listen">🔊 开始听题</button>
-          <button class="btn small ghost" data-act="read">🗣️ 朗读题目</button>
-          <button class="btn small skip" data-act="skip">✅ 听完，读完，开始讲解 →</button>
+          <button class="btn small ghost" data-act="read">🗣️ 朗读完进入下一步</button>
         </div>
       </div>
 
@@ -99,12 +99,59 @@
     </div>
   </section>
 
+  <!-- ============ 默写版 ============ -->
+  <section id="screenRecall" class="screen hidden">
+    <div class="archive-grid">
+      <div class="card archive-list">
+        <h3>📝 默写版 · 题目</h3>
+        <div id="recallList"></div>
+      </div>
+      <div class="card archive-detail">
+        <h3 id="recallDetailTitle">选择左侧题目，凭记忆默写</h3>
+        <div id="recallDetail" class="trajectory"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ 通关仪式 ============ -->
   <section id="screenFinish" class="screen hidden">
     <div class="finish-card card">
       <div class="finish-bee">🐝🍯</div>
       <h2>你的力扣学习之旅到此结束</h2>
       <p id="finishWords"></p>
+    </div>
+  </section>
+
+  <!-- ============ 模型配置 ============ -->
+  <section id="screenModelConfig" class="screen hidden">
+    <div class="config-card card">
+      <h2>⚙️ 模型配置</h2>
+      <p class="muted">配置 lico 使用的模型。修改后点击「保存并测试连接」，连接成功即生效。</p>
+
+      <label for="cfgProvider">服务商</label>
+      <select id="cfgProvider" class="input">
+        <option value="deepseek">DeepSeek</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">自定义（OpenAI 兼容）</option>
+      </select>
+
+      <label for="cfgBaseUrl">Base URL</label>
+      <input id="cfgBaseUrl" class="input" placeholder="https://api.deepseek.com" autocomplete="off" />
+
+      <label for="cfgModel">模型名</label>
+      <input id="cfgModel" class="input" placeholder="deepseek-chat" autocomplete="off" />
+
+      <label for="cfgApiKey">API Key</label>
+      <input type="password" id="cfgApiKey" class="input" placeholder="sk-..." autocomplete="off" />
+
+      <label for="cfgLang">代码语言（讲解 / 生成用）</label>
+      <select id="cfgLang" class="input">
+        <option value="python">Python</option>
+        <option value="cpp">C++</option>
+      </select>
+
+      <button class="btn primary" id="btnCfgSave">💾 保存并测试连接</button>
+      <div id="cfgMsg" class="config-msg"></div>
     </div>
   </section>
 

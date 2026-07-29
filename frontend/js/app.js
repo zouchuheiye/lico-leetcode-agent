@@ -1,7 +1,7 @@
 // 主流程编排：配置 -> 上发条 -> 开始盒子 -> 手撕学习 -> 已做题集 / 通关
 (function () {
   const $ = (id) => document.getElementById(id);
-  const screens = ["screenConfig", "screenStartBox", "screenLearn", "screenArchive", "screenFinish"];
+  const screens = ["screenConfig", "screenStartBox", "screenLearn", "screenArchive", "screenFinish", "screenModelConfig", "screenRecall"];
   function showScreen(id) {
     screens.forEach((s) => $(s).classList.toggle("hidden", s !== id));
     // 进入「已做题集」页时，把右上角按钮变成「去做新题」，点击可返回学习页
@@ -15,6 +15,8 @@
       ab.dataset.mode = "archive";
       ab.title = "查看已做过的题目";
     }
+    // 进入任意页时，模型配置按钮复位为「配置模型」态（避免从其它入口切换后状态错乱）
+    setModelCfgBtn("config");
   }
   function toast(msg, ms = 2200) {
     const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
@@ -22,12 +24,15 @@
   }
 
   let state = { problem: null, stepIndex: 0, total: 100, doneCount: 0, drafts: {} };
+  // 进入模型配置页时记住来源页，点「回到原页面」后返回
+  let returnScreen = "screenStartBox";
 
   // 切换学习页布局：mode="problem" 时左列（题目）居中、右列隐藏；mode="learn" 时恢复两列
   function setLayoutMode(mode) {
     const grid = document.querySelector(".learn-grid");
     if (!grid) return;
     grid.classList.toggle("problem-only", mode === "problem");
+    grid.classList.toggle("single-col", mode === "single");
   }
 
   // 启动时绑定语言选择器（讲解页内嵌；与学习轨迹完全解耦，仅写入 localStorage）
@@ -69,12 +74,11 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // 三按钮朗读行：🔊 听 / 🗣️ 朗读 / 🚀 听完读完下一步（讲解页用：进入分步敲代码）
+  // 两按钮朗读行：🔊 听 / 🗣️ 朗读（已删除「听完读完下一步」跳过按钮，强制听读完才进下一步）
   const AUDIO_ROW = (listenLabel) => `
     <div class="audio-row" data-audio>
       <button class="btn small" data-act="listen">🔊 ${listenLabel}</button>
-      <button class="btn small ghost" data-act="read">🗣️ 朗读</button>
-      <button class="btn small skip" data-act="skip">🚀 听完，读完，进入分步敲代码 →</button>
+      <button class="btn small ghost" data-act="read">🗣️ 朗读完进入下一步</button>
     </div>`;
 
   // 讲解页底部：语言选择行（默认 Python，与学习轨迹完全解耦，仅 localStorage 记忆）
@@ -91,8 +95,8 @@
       <span class="muted" style="font-size:12px">（选中后自动记忆，下次默认此语言）</span>
     </div>`;
 
-  // 绑定一组朗读行按钮
-  function bindAudioRow(parent, { onListen, onReadDone, onSkip }) {
+  // 绑定一组朗读行按钮（仅听 + 朗读；不提供跳过入口，强制听读完才进下一步）
+  function bindAudioRow(parent, { onListen, onReadDone }) {
     // 兼容两种结构：父元素自身就是音频行，或音频行是父元素的后代
     const rowEl = (parent.matches && parent.matches("[data-audio]")) ? parent : parent.querySelector("[data-audio]");
     if (!rowEl) return;
@@ -123,19 +127,11 @@
     };
 
     const readBtn = rowEl.querySelector('[data-act="read"]');
-    // 每次绑定都重置"朗读结束"状态，避免上一题残留导致直接跳过
+// 每次绑定都重置状态，避免上一题残留；点击即标记「朗读完」并进入下一步
     readBtn.dataset.done = "";
-    readBtn.textContent = "🗣️ 朗读";
+    readBtn.textContent = "🗣️ 朗读完进入下一步";
     readBtn.classList.remove("read-done");
-    readBtn.onclick = () => {
-      if (readBtn.dataset.done === "1") { onReadDone(); return; }
-      readBtn.dataset.done = "1";
-      readBtn.textContent = "✅ 我朗读结束了";
-      readBtn.classList.add("read-done");
-      toast("慢慢读，不着急～读完了就点「我朗读结束了」");
-    };
-    const skipBtn = rowEl.querySelector('[data-act="skip"]');
-    if (skipBtn) skipBtn.onclick = () => onSkip();
+    readBtn.onclick = () => { onReadDone(); };
   }
 
   // 记录断点：当前进行到的阶段与步骤（下次从中断处继续）
@@ -186,12 +182,11 @@
       subEl.textContent = "点击这个方框，出题小蜜蜂开始运转…";
       await Bee.say("太好了，我们开始学习第一题吧！", { keep: true });
     }
-    Bee.pointAt(box);
   }
   $("startBox").addEventListener("click", async () => {
     const box = $("startBox");
     if (box.classList.contains("working")) return;
-    Bee.hideHand(); Bee.hideSpeech();
+    Bee.hideSpeech();
     box.classList.add("working");
     box.querySelector(".start-box-sub").innerHTML = '<span class="spinner"></span> 出题小蜜蜂正在运转…';
     try {
@@ -199,7 +194,7 @@
       if (res.finished) { showFinish(); return; }
       loadProblem(res.problem, res.resume ? res.checkpoint : null);
     } catch (e) {
-      toast("出题失败，请稍后再试");
+      toast(e.message || "出题失败，请稍后再试");
     } finally {
       box.classList.remove("working");
       const sub = box.querySelector(".start-box-sub");
@@ -214,7 +209,6 @@
     state.problem = problem; state.stepIndex = 0;
     showScreen("screenLearn");
     setLayoutMode("problem");  // 题目页：左列居中、右列隐藏
-    Bee.hideHand();
     renderProblemCard(problem);
     // 复习（已有讲解与步骤）或续学：workCard 先给个占位
     $("workCard").innerHTML = `<div class="work-placeholder">先听题、朗读题目，熟悉之后我来讲解～</div>`;
@@ -237,21 +231,19 @@
         else { goExplain(); }
         break;
       case "steps":
-      case "step_typing": {
+      case "copy": {
         (async () => {
           if (!p.steps || !p.steps.length) {
-            try { const d = await API.steps(p.id); p.steps = d.steps || []; } catch (e) { p.steps = []; }
+            try { const d = await API.steps(p.id); p.steps = d.steps || []; }
+            catch (e) { toast(e.message || "步骤生成失败，请确认已配置模型 Key"); return; }
           }
           if (!p.steps.length) { goSteps(); return; }
           state.stepIndex = Math.max(0, Math.min(cp.step_index, p.steps.length - 1));
-          if (cp.phase === "step_typing") renderStepTyping();
-          else renderStepExplain();
+          if (cp.phase === "copy") renderCopy();
+          else renderExplainSteps();
         })();
         break;
       }
-      case "final":
-        goFinal();
-        break;
       default:
         Bee.say(`这是第 ${p.seq} 题《${p.title}》，先熟悉一下题目吧。`);
     }
@@ -294,23 +286,16 @@
         await Bee.say("很好，你已经熟悉了题目，我开始讲解了！");
         goExplain();
       },
-      onSkip: async () => {
-        const p = state.problem;
-        Bee.stopHL();
-        API.event(p.id, -1, "skip_problem");
-        toast("跳过朗读，直接开讲～");
-        goExplain();
-      },
     });
   }
 
   // ---------------------------------------------------------- 讲解阶段
   async function goExplain() {
     const p = state.problem;
-    setLayoutMode("learn");  // 进入讲解：恢复两列布局
+    setLayoutMode("single");  // 进入讲解：居中单栏
     $("workCard").innerHTML = `<div class="work-placeholder"><span class="spinner"></span> 讲解小蜜蜂正在准备…</div>`;
     let data;
-    try { data = await API.explain(p.id); } catch (e) { toast("讲解生成失败"); return; }
+    try { data = await API.explain(p.id); } catch (e) { toast(e.message || "讲解生成失败，请确认已配置模型 Key"); return; }
     p.explanation = data.explanation;
     recordProgress("explain", -1);
     renderExplain(p.explanation);
@@ -338,12 +323,6 @@
         await Bee.say("很好！接下来我把代码一步一步拆给你，我们开始手撕吧！");
         goSteps();
       },
-      onSkip: async () => {
-        Bee.stopHL();
-        API.event(state.problem.id, -1, "skip_example");
-        toast("跳过朗读例子，直接拆解～");
-        goSteps();
-      },
     });
   }
 
@@ -359,7 +338,7 @@
       }
       p.steps = data.steps;
       state.stepIndex = 0;
-      renderStepExplain();
+      renderExplainSteps();
     } catch (e) {
       console.error("[goSteps] 失败:", e);
       toast("步骤生成失败：" + (e && e.message ? e.message : "未知错误"));
@@ -390,164 +369,194 @@
     if (Number.isNaN(i)) return;
     if (i < 0 || i >= state.problem.steps.length) return;
     if (i === state.stepIndex) return; // 当前步骤不重复渲染
-    state.stepIndex = i;
-    renderStepExplain();
+      state.stepIndex = i;
+      renderExplainSteps();
   });
 
-  // 讲解页：左列（原题目区）改为分步讲解内容，保留听/读按钮
-  function renderLeftExplain(step, onReadDone) {
-    const p = state.problem, i = state.stepIndex;
-    const left = $("problemCard") || document.querySelector(".problem-card");
-    if (!left) return; // 防御：左列不存在时不抛错
-    // 前面步骤折叠成方块 [第 1 步] [第 2 步] ...，平时只显示标签，点击才展开。
-    // 当前步（第 i+1 步）平铺完整代码，方便用户看着抄。
-    let folds = "";
-    for (let k = 0; k < i; k++) {
-      const s = p.steps[k];
-      const title = s.title || `第 ${k + 1} 步`;
-      const code = s.code || "";
-      folds += `
-        <div class="step-fold">
-          <button type="button" class="step-fold-head">
-            <span class="step-fold-caret">▾</span>
-            <span class="step-fold-title">📦 第 ${k + 1} 步：${escapeHtml(title)}</span>
-          </button>
-          <pre class="code code-fold-body" hidden>${escapeHtml(code)}</pre>
-        </div>`;
-    }
-    const incCode = step.incremental_code || step.code || "";
-    const separator = i > 0
-      ? `<div class="step-separator"><span>— 第 ${i + 1} 步新增 —</span></div>`
-      : "";
-    left.innerHTML = `
+  // 分步讲解页（居中、只读）：
+  //   - 每步展示 explanation + 本步新增代码（高亮加粗 inc-hl）
+  //   - 不是最后一步：底部「看这步懂了，看下一步」→ state.stepIndex++ 继续讲解
+  //   - 是最后一步：底部「看这步懂了，进抄写」→ renderCopy（描红逐行）
+  function renderExplainSteps() {
+    const p = state.problem, i = state.stepIndex, step = p.steps[i];
+    const isLast = i === p.steps.length - 1;
+    recordProgress("steps", i);
+    setLayoutMode("single");
+    const inc = step.incremental_code || step.code || ""; // 本步新增的代码（高亮加粗）
+    const btn = isLast
+      ? `<button class="btn primary step-finish" id="nextStep">📖 看这步懂了，进抄写 →</button>`
+      : `<button class="btn primary step-finish" id="nextStep">👉 看这步懂了，看下一步 →</button>`;
+    $("workCard").innerHTML = `
       ${stepDots(i)}
-      <div class="section-title">🧩 ${escapeHtml(step.title)}</div>
+      <div class="section-title">🧩 第 ${i + 1} 步：${escapeHtml(step.title || "")}</div>
       <div class="explain-text" id="stepExplain">${escapeHtml(step.explanation || "")}</div>
-      ${folds}
-      ${separator}
-      <pre class="code code-inc">${escapeHtml(incCode)}</pre>
+      <div class="explain-hint">📝 本步新增的代码（高亮加粗）：</div>
+      <pre class="code inc-hl"><code>${escapeHtml(inc)}</code></pre>
       <div class="audio-row" data-audio>
-        <button class="btn small" data-act="listen">🔊 听第${i + 1}步</button>
-        <button class="btn small ghost" data-act="read">🗣️ 朗读</button>
-      </div>`;
-    // 折叠方块：点击标题展开/收起（同时切 .open class + pre 的 hidden 属性，双保险）
-    left.querySelectorAll(".step-fold-head").forEach((hd) => {
-      hd.addEventListener("click", () => {
-        const fold = hd.closest(".step-fold");
-        if (!fold) return;
-        const opened = fold.classList.toggle("open");
-        const body = fold.querySelector(".code-fold-body");
-        if (body) body.hidden = !opened;
-      });
-    });
-    bindAudioRow(left, {
+        <button class="btn small" data-act="listen">🔊 听第 ${i + 1} 步</button>
+        <button class="btn small ghost" data-act="read">🗣️ 朗读完进入下一步</button>
+      </div>
+      ${btn}`;
+    bindAudioRow($("workCard"), {
       onListen: async () => {
         API.event(p.id, i, "listen_step");
         await Bee.speakHL(step.explanation, $("stepExplain"), {});
       },
       onReadDone: async () => {
         API.event(p.id, i, "read_step");
-        if (onReadDone) await onReadDone();
-        else toast("朗读完这一步～");
+        toast(isLast ? "读完了～可以点「进抄写」开始最后整段抄写" : "读完了～可以点「看下一步」继续");
       },
-      onSkip: () => {},
     });
+    $("nextStep").onclick = () => {
+      if (isLast) renderCopy();
+      else { state.stepIndex = i + 1; renderExplainSteps(); }
+    };
   }
 
-  // 默写页：左列改为讲解上下文（之前累积代码 + 当前步骤提示）
-  function renderLeftTyping(p, i) {
-    const step = p.steps[i];
-    const prevAll = p.steps.slice(0, i).map((s) => s.code || "").filter(Boolean).join("\n\n");
-    const left = $("problemCard") || document.querySelector(".problem-card");
-    if (!left) return; // 防御：左列不存在时不抛错，避免 renderStepTyping 中断
-    left.innerHTML = `
-      ${stepDots(i)}
-      <div class="section-title">📝 第 ${i + 1} 步 · ${escapeHtml(step.title)}</div>
-      <div class="dictation-hint">${i > 0 ? "上方是前面步骤已写好的代码，下方是第 " + (i + 1) + " 步要新增的内容。" : "这是第一步，从头写出完整代码。"}</div>
-      ${prevAll ? `<pre class="code readonly">${escapeHtml(prevAll)}</pre>` : ""}
-      <pre class="code">${escapeHtml(step.code || "")}</pre>`;
-  }
-
-  // 进入新步骤时退出默写模式（左列恢复显示），避免上一步的状态残留
-  // 同时顺手把残留的 problem-only 清掉：断点续学 / 从"已做题集"返回再开新题等场景
-  // 下，problem-only 可能在更早的 loadProblem 里被加上，若之后没人 setLayoutMode("learn")
-  // 就清不掉，work-card 会被 CSS 永久 display:none 隐藏，导致红框空白的 bug。
-  function resetFocusMode() {
-    const grid = document.querySelector(".learn-grid");
-    if (!grid) return;
-    grid.classList.remove("problem-only"); // 防御：移除残留的题目页布局，恢复双列
-    if (grid.classList.contains("typing")) {
-      grid.classList.remove("typing"); // 退出默写模式，左列恢复
-    }
-    // 蜜蜂复位：退出默写时移回中央（清掉 on-left）
-    const bee = $("beeSvg");
-    if (bee) bee.classList.remove("on-left");
-  }
-
-  // 讲解页右列已改为普通「累积长 textarea」（见 renderStepExplain），不再与左列镜像。
-  // 左列折叠方块 + 当前步平铺，右列直接预填前面已抄代码 + 当前步增量，不依赖镜像逻辑。
-
-  // 先展示这一步的讲解与代码（听/朗读 + 抄写 + 下一步默写）
-  function renderStepExplain() {
-    const p = state.problem, i = state.stepIndex, step = p.steps[i];
-    const d = state.drafts[i] || {};
-    // 右列 textarea 是「累积长框」：前面所有步骤已抄过的代码（草稿优先，否则题目 code）
-    // + 当前步增量代码（待抄写）。用户进下一步时前面代码不消失，全部保留在框里继续写。
-    let seedCopy;
-    if (d.copy != null && d.copy !== "") {
-      // 用户编辑过的完整累积（含前面步骤 + 当前步），直接复用，不重复拼接
-      seedCopy = d.copy;
-    } else {
-      let prevCopied = "";
-      for (let j = 0; j < i; j++) {
-        const dj = state.drafts[j];
-        const codeJ = (dj && dj.copy != null && dj.copy !== "") ? dj.copy : (p.steps[j].code || "");
-        if (codeJ) prevCopied += (prevCopied ? "\n\n" : "") + codeJ;
-      }
-      const curSeed = step.incremental_code || step.code || "";
-      seedCopy = (prevCopied ? prevCopied + "\n\n" : "") + curSeed;
-    }
-    recordProgress("steps", i);
-    resetFocusMode(); // 进入新步骤先退出默写，左列恢复
-    setLayoutMode("learn"); // 移除 problem-only class，恢复双列（断点续学进分步时右列曾被隐藏）
-    // 进入下一步默写（先把抄写内容写入前端缓存 + 落库到学习轨迹）
-    async function goTyping() {
-      const copyText = $("stepCopyCode") ? $("stepCopyCode").value : "";
-      (state.drafts[i] = state.drafts[i] || {}).copy = copyText;
-      // 抄写内容记到学习轨迹（复用 event 接口，失败不影响学习）
-      API.event(p.id, i, "step_copy", { copy: copyText }).catch(() => {});
-      API.event(p.id, i, "skip_step");
-      toast("跳过朗读，直接开敲～");
-      renderStepTyping();
-    }
-    // —— 左列变为分步讲解内容（保留听/读按钮）——
-    renderLeftExplain(step, async () => goTyping());
-    // —— 右列：步骤进度感组件（方案 B）+ 抄写框 + 下一步 ——
-    const n = p.steps.length;
-    const cur = i + 1;
-    const lineCount = (s) => (s || "").split("\n").filter((l) => l.length).length;
-    const incLines = lineCount(step.incremental_code) || lineCount(step.code);
-    const totalLines = p.steps.reduce((a, s) => a + lineCount(s.incremental_code || s.code), 0);
-    const pct = n > 1 ? Math.round((cur / n) * 100) : 100;
-    $("workCard").innerHTML = `
-      <div class="step-progress">
-        <div class="step-progress-head">
-          <span class="step-progress-label">第 ${cur} / 共 ${n} 步</span>
+  // 抄写页（描红式、单框累积）：
+  //   - 单框 .copy-card：顶部 .copy-banner 说明行（不可抄）+ 下方 .copy-stage 累积区。
+  //   - 待抄模板每个字符拆成 <span class="gh">（默认浅色半透明）；
+  //     用户在 textarea 逐字敲入，匹配的字符即时变 .typed（黑色加粗蜂蜜背景）；
+  //     敲多或敲错的字符标 .err（红闪）。回车整行完全匹配 → 该行升级为 .done（黑加粗只读）
+  //     并累积到 stage 顶部，同时新一行以浅色 ghost 出现；否则整段 .err 闪 600ms 再复位。
+  //   - 无右侧历史栏；Tab 缩进由 enableTab 支持；空行直接回车即可（模板显「（空行）」占位）。
+  function renderCopy() {
+    const p = state.problem;
+    if (!p.steps || !p.steps.length) { toast("步骤还没生成"); return; }
+    const last = p.steps[p.steps.length - 1];
+    const full = (last.code || last.incremental_code || "").replace(/\s+$/, "");
+    const lines = full.split("\n");
+    let done = 0;
+    recordProgress("copy", state.stepIndex);
+    setLayoutMode("single");
+    const work = $("workCard");
+    work.innerHTML = `
+      <div class="section-title">📝 抄写练习 · 描红</div>
+      <div class="copy-progress" id="copyProgress"></div>
+      <div class="copy-card">
+        <div class="copy-banner">
+          <span class="copy-banner-label">📌 说明</span>
+          <span class="copy-banner-text"># 该框用于描红抄写（这一行不用抄）</span>
         </div>
-        <div class="step-progress-bar"><i style="width:${pct}%"></i></div>
-      </div>
-      <textarea class="code copy-ta" id="stepCopyCode" placeholder="📝 前面已抄的代码都在这里，接着往下抄写第 ${cur} 步的代码（边抄边记）">${escapeHtml(seedCopy)}</textarea>
-      <button class="btn small skip step-finish">✅ 听完，读完，抄完，我都懂了，下一步默写 →</button>`;
-    const copyTa = $("stepCopyCode");
-    if (copyTa) {
-      enableTab(copyTa);
-      // 实时把抄写内容写回前端缓存，保证「再看一眼讲解」来回切不丢
-      copyTa.addEventListener("input", () => {
-        (state.drafts[i] = state.drafts[i] || {}).copy = copyTa.value;
+        <div class="copy-stage" id="copyStage"></div>
+      </div>`;
+    const $stage = $("copyStage");
+    // 已敲完的行：每个 .gh 预置 .typed（黑加粗只读），整行带 .done
+    function buildDoneLine(target) {
+      if (target === "") {
+        return `<div class="copy-target ghost-line done"><span class="gh-empty">（空行）</span></div>`;
+      }
+      let html = `<div class="copy-target ghost-line done">`;
+      for (let k = 0; k < target.length; k++) {
+        const ch = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
+        html += `<span class="gh typed" data-pos="${k}">${ch}</span>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+    // 当前行：每个 .gh 浅色裸态，随 input 实时描红
+    function buildGhostLine(target) {
+      if (target === "") {
+        return `<div class="copy-target ghost-line"><span class="gh-empty">（空行）直接回车即可</span></div>`;
+      }
+      let html = `<div class="copy-target ghost-line">`;
+      for (let k = 0; k < target.length; k++) {
+        const ch = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
+        html += `<span class="gh" data-pos="${k}">${ch}</span>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+    // 按当前 input.value 同步描红：匹配 → .typed；超出或不匹配 → .err
+    function syncGhost(lineEl, input) {
+      const spans = lineEl.querySelectorAll(".gh");
+      const t = lines[done];
+      for (let k = 0; k < spans.length; k++) {
+        if (k < input.length && input[k] === t[k]) {
+          spans[k].classList.add("typed");
+          spans[k].classList.remove("err");
+        } else if (k < input.length) {
+          spans[k].classList.add("err");
+          spans[k].classList.remove("typed");
+        } else {
+          spans[k].classList.remove("typed", "err");
+        }
+      }
+    }
+    function renderStage() {
+      if (done >= lines.length) { finishCopy(); return; }
+      let html = "";
+      for (let i = 0; i < done; i++) html += buildDoneLine(lines[i]);
+      const target = lines[done];
+      $("copyProgress").textContent = `当前第 ${done + 1} / ${lines.length} 行（已抄 ${done}）`;
+      html += buildGhostLine(target);
+      html += `
+        <textarea id="copyInput" class="code copy-input" rows="2" placeholder="逐字敲入，与上面模板对应字符会变成黑字加粗    回车提交    Tab = 4 空格缩进"></textarea>
+        <div id="copyMsg" class="copy-msg"></div>`;
+      $stage.innerHTML = html;
+      const ta = $("copyInput");
+      const lineEl = $stage.querySelector(".copy-target.ghost-line:not(.done)");
+      ta.focus();
+      ta.scrollIntoView({ block: "center", behavior: "smooth" });
+      enableTab(ta); // ✅ Tab 缩进支持
+      ta.addEventListener("input", () => {
+        syncGhost(lineEl, ta.value);
+        $("copyMsg").textContent = "";
+      });
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); checkLine(); }
       });
     }
-    // 「下一步默写」按钮（听 + 朗读 + 抄写都完成时点）
-    $("workCard").querySelector(".step-finish").onclick = goTyping;
+    function checkLine() {
+      const target = lines[done];
+      const input = $("copyInput").value;
+      const lineEl = $stage.querySelector(".copy-target.ghost-line:not(.done)");
+      const spans = lineEl ? lineEl.querySelectorAll(".gh") : [];
+      if (input === target) {
+        // 全行匹配：所有 gh 落定为 .typed（黑色加粗）；该行升级为 .done 累积，新一行浅色出现
+        spans.forEach((s) => { s.classList.add("typed"); s.classList.remove("err"); });
+        API.event(p.id, state.stepIndex, "copy_line", { line: done + 1, ok: true }).catch(() => {});
+        const msg = $("copyMsg");
+        msg.className = "copy-msg ok";
+        msg.textContent = "✅ 对啦，继续～";
+        done++;
+        setTimeout(renderStage, 220);
+        return;
+      }
+      // 失败：整段 .err 闪 600ms 再复位（让用户看清错位）
+      spans.forEach((s) => { s.classList.add("err"); s.classList.remove("typed"); });
+      const n = Math.min(target.length, input.length);
+      let pos = n + 1;
+      for (let k = 0; k < n; k++) { if (target[k] !== input[k]) { pos = k + 1; break; } }
+      const msg = $("copyMsg");
+      msg.className = "copy-msg err";
+      msg.textContent = (input.length !== target.length)
+        ? `长度不一致：你输 ${input.length} 字，正确应为 ${target.length} 字（第 ${pos} 个字符起不同）`
+        : `第 ${pos} 个字符没比对上，再看看上面那行～`;
+      API.event(p.id, state.stepIndex, "copy_line", { line: done + 1, ok: false, pos }).catch(() => {});
+      setTimeout(() => {
+        spans.forEach((s) => { s.classList.remove("err"); });
+      }, 600);
+    }
+    renderStage();
+  }
+
+  // 抄写全部完成：标记本题完成并进入下一题
+  async function finishCopy() {
+    const p = state.problem;
+    const res = await API.done(p.id);
+    state.doneCount = res.done_count; updateProgress();
+    await Bee.say("抄完啦！这一题先记到蜜蜂的蜜罐里🍯");
+    await sleep(300);
+    if (res.all_done) { showFinish(); return; }
+    await Bee.say("我们进入下一题吧！");
+    try {
+      const next = await API.start(null);
+      if (next.finished) { showFinish(); return; }
+      loadProblem(next.problem);
+    } catch (e) {
+      toast(e.message || "出题失败，请稍后再试");
+    }
   }
 
   // 让 textarea 支持 Tab 缩进（默认 Tab 会让焦点跳走，写代码时不可用）
@@ -582,193 +591,79 @@
     });
   }
 
-  // 遮住讲解 -> 敲代码（所有步骤代码在同一个框里；前面步骤预填，用户只续写本步增量）
-  function renderStepTyping(prefill = "") {
-    const p = state.problem, i = state.stepIndex, step = p.steps[i];
-    if (!step) {
-      console.error("[renderStepTyping] 步骤不存在:", i, p.steps);
-      toast("这一步还没生成，请回到上一步或重新进入分步");
-      return;
-    }
-    const hasInc = !!(step.incremental_code && step.incremental_code.trim());
-    const d = state.drafts[i] || {};
-    recordProgress("step_typing", i);
-    resetFocusMode(); // 进入新步骤先退出默写，左列恢复
-    const grid = document.querySelector(".learn-grid");
-    if (grid) grid.classList.add("typing"); // 默写：单列居中 + 蜜蜂左移 + 敲码框撑高
-    // 默写时蜜蜂飞到左侧（中央位置不挡字）
-    const bee = $("beeSvg");
-    if (bee) bee.classList.add("on-left");
-    const prevCode = (i > 0 && hasInc) ? (p.steps[i - 1].code || "") : "";
-    // 已保存的草稿优先：用户之前敲过的内容（含预填的前置代码）直接还原，不丢
-    const seed = (d.code != null && d.code !== "")
-      ? d.code
-      : prevCode + (prefill ? ((prevCode && !prevCode.endsWith("\n") ? "\n" : "") + prefill) : "");
-    // 默写时左列显示题目卡（让用户看着题目默写，讲解已遮住）
-    // 不能调 renderProblemCard：它依赖 pSeq/pStatement/pReveal/pRevealBtn/problemAudio 等 id，
-    // 而讲解页 renderLeftExplain 用 left.innerHTML = ... 把 problemCard 内部整体替换了，
-    // 这些 id 全部变成 null，再调 renderProblemCard 会抛 "Cannot set properties of null"。
-    // 改为直接重建左列内部为纯题目卡（不含音频行，默写时不需要听题/朗读题目按钮）。
-    const exs = (p.content.examples || []).map((e, idx) =>
-      `<div class="example"><b>示例 ${idx + 1}</b><br/>` +
-      `<code>输入：${escapeHtml(e.input || "")}</code><br/>` +
-      `<code>输出：${escapeHtml(e.output || "")}</code>` +
-      (e.explanation ? `<br/><span class="muted">${escapeHtml(e.explanation)}</span>` : "") +
-      `</div>`).join("");
-    const cons = (p.content.constraints || []);
-    const consHtml = cons.length
-      ? `<b>约束：</b><ul>${cons.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`
-      : "";
-    $("problemCard").innerHTML = `
-      <div class="problem-head">
-        <span class="seq-badge">#${p.seq}</span>
-        <h2>${escapeHtml(p.title)}</h2>
-        <span class="diff-badge">${escapeHtml(p.difficulty || "")}</span>
-      </div>
-      <div class="statement">${escapeHtml(p.content.statement || "")}</div>
-      <div class="reveal collapsed">
-        <div class="examples">${exs}</div>
-        <div class="constraints">${consHtml}</div>
-      </div>`;
-    // —— 右列敲码框（默写时左列已重新渲染为题目卡，无需再渲染左列讲解上下文）——
-    $("workCard").innerHTML = `
-      ${stepDots(i)}
-      <div class="section-title">📝 默写第 ${i + 1} 步的<b>代码</b></div>
-      <textarea class="code" id="stepCode">${escapeHtml(seed)}</textarea>
-      <div id="reviewArea"></div>
-      <div class="audio-row">
-        <button class="btn primary" id="submitStep">✅ 敲完第${i + 1}步了</button>
-        <button class="btn small ghost" id="peekStep">👀 再看一眼讲解</button>
-      </div>`;
-    const ta = $("stepCode");
-    ta.focus();
-    enableTab(ta); // 支持 Tab 缩进
-    // 实时把默写内容写回前端缓存，保证「再看一眼讲解」来回切不丢
-    ta.addEventListener("input", () => {
-      (state.drafts[i] = state.drafts[i] || {}).code = ta.value;
-    });
-    // 光标放到 seed 末尾，方便直接续写
-    ta.setSelectionRange(seed.length, seed.length);
-    // 「再看一眼讲解」：先把当前默写框内容存回缓存，再回讲解页（讲解页会从缓存回填抄写框）
-    $("peekStep").onclick = () => {
-      (state.drafts[i] = state.drafts[i] || {}).code = ta.value;
-      renderStepExplain();
-    };
-    $("submitStep").onclick = () => submitStep();
-    // 敲码框与左列对齐由 CSS 完成
-  }
-
-  async function submitStep() {
-    const p = state.problem, i = state.stepIndex;
-    const code = $("stepCode").value; // 现在框里就是完整代码（前面预填 + 用户续写）
-    delete state.drafts[i]; // 这一步已提交，草稿使命完成
-    const btn = $("submitStep"); btn.disabled = true;
-    $("reviewArea").innerHTML = '<div class="muted"><span class="spinner"></span> 审查小蜜蜂正在审查…</div>';
-    let res;
-    try { res = await API.review(p.id, i, code, false); }
-    catch (e) { toast("审查失败"); btn.disabled = false; return; }
-    finishReview(res, "step");
-  }
-
-  // 审查结束后统一：先停顿让客户看懂，再点"我懂了，下一步吧"才继续（大小错都如此）
-  async function finishReview(res, scope) {
-    renderReview(res, scope);
-    if (!res.passed && scope === "step") {
-      appendRetry(); // 大/小错都附上这一步的重新讲解，帮助看懂
-    }
-    if (!res.passed && scope === "final") {
-      $("reviewArea").innerHTML += `<div class="review-box minor"><b>🔁 对照一下：</b>可以回到上方讲解，把解法再理一遍。</div>`;
-    }
-    if (res.passed) {
-      await Bee.say(res.severity === "none" ? "完美！这一步敲对啦！" : "不错，思路对了，小问题我标出来啦～");
+  // ---------------------------------------------------------- 默写版（右上角按钮，独立侧栏）
+  $("btnRecall").addEventListener("click", () => {
+    const b = $("btnRecall");
+    if (b.dataset.mode === "return") {
+      showScreen(returnScreen);
+      b.dataset.mode = "recall";
+      b.textContent = "📝 默写版";
     } else {
-      await Bee.say("看看审查意见，想清楚哪里错了；懂了就点「我懂了，下一步吧」。");
+      returnScreen = currentScreen();
+      b.dataset.mode = "return";
+      b.textContent = "← 返回学习";
+      openRecall();
     }
-    showReviewNextButton(async () => {
-      if (scope === "step") {
-        const p = state.problem, i = state.stepIndex;
-        if (i + 1 < p.steps.length) { state.stepIndex = i + 1; renderStepExplain(); }
-        else { goFinal(); }
-      } else {
-        await advanceAfterFinal(res);
-      }
+  });
+
+  function openRecall() {
+    showScreen("screenRecall");
+    API.problems().then((d) => renderRecallList(d.problems || [])).catch(() => {
+      const el = $("recallList");
+      if (el) el.innerHTML = '<div class="muted">读取题目列表失败</div>';
     });
   }
-
-  // 整题作答"下一步"：标记完成并进入下一题 / 通关
-  async function advanceAfterFinal(res) {
-    const p = state.problem;
-    const doneRes = await API.done(p.id);
-    state.doneCount = doneRes.done_count; updateProgress();
-    await Bee.say("好，这道题先记到这儿，我采到一点蜜啦🍯");
-    await sleep(400);
-    if (doneRes.all_done) { showFinish(); return; }
-    await Bee.say("我们进入下一题吧！");
-    const next = await API.start(null);
-    if (next.finished) { showFinish(); return; }
-    loadProblem(next.problem);
+  function renderRecallList(list) {
+    const el = $("recallList");
+    if (!el) return;
+    if (!list.length) { el.innerHTML = '<div class="muted">还没有学习记录～</div>'; return; }
+    el.innerHTML = list.map((p) => `
+      <div class="recall-item" data-id="${p.id}">
+        <span class="seq-badge">#${p.seq}</span>
+        <span class="recall-title">${escapeHtml(p.title)}</span>
+        <span class="status-dot ${p.status === "done" ? "done" : "learning"}">${p.status === "done" ? "✅ 已学" : "🟡 学中"}</span>
+      </div>`).join("");
+    el.querySelectorAll(".recall-item").forEach((it) => {
+      it.onclick = () => {
+        el.querySelectorAll(".recall-item").forEach((x) => x.classList.remove("active"));
+        it.classList.add("active");
+        renderRecallDetail(Number(it.getAttribute("data-id")), it.querySelector(".recall-title").textContent);
+      };
+    });
   }
-
-  function appendRetry() {
-    const step = state.problem.steps[state.stepIndex];
-    const area = $("reviewArea");
-    area.innerHTML += `
-      <div class="review-box minor">
-        <b>🔁 重新讲一遍这一步：</b><br/>${escapeHtml(step.explanation || "")}
-        <pre class="code">${escapeHtml(step.code || "")}</pre>
-      </div>`;
-  }
-
-  // 在审查结果下方放置"我懂了，下一步吧"按钮（停顿，由用户主动点击推进）
-  function showReviewNextButton(cb) {
-    const area = $("reviewArea");
-    const wrap = document.createElement("div");
-    wrap.className = "audio-row";
-    wrap.style.marginTop = "12px";
-    wrap.innerHTML = `<button class="btn primary" id="reviewNext">🙌 我懂了，下一步吧</button>`;
-    area.appendChild(wrap);
-    $("reviewNext").onclick = cb;
-  }
-
-  function renderReview(res, scope) {
-    const area = $("reviewArea");
-    const label = { none: "✅ 完全正确", minor: "🟡 有小问题", major: "🔴 错误较大" }[res.severity] || "";
-    area.innerHTML = `
-      <div class="review-box ${res.severity}">
-        <b>${label}</b><br/>${escapeHtml(res.review.feedback || "")}
-        ${res.review.hint ? `<br/><span class="muted">提示：${escapeHtml(res.review.hint)}</span>` : ""}
-      </div>`;
-  }
-
-  // ---------------------------------------------------------- 最终整题作答
-  function goFinal() {
-    const p = state.problem;
-    recordProgress("final", -1);
-    setLayoutMode("learn"); // 防御：若之前 problem-only 残留，恢复双列避免 workCard 被 CSS 隐藏
-    $("workCard").innerHTML = `
-      <div class="section-title">🏁 最后一关：默写完整代码</div>
-      <div class="muted" style="margin-bottom:6px">所有步骤都学完啦，现在把完整解法独立敲出来。</div>
-      <textarea class="code" id="finalCode" placeholder="# 完整解法…"></textarea>
-      <div id="reviewArea"></div>
+  function renderRecallDetail(pid, title) {
+    const lang = _getLang();
+    const det = $("recallDetail");
+    det.innerHTML = `
+      <div class="section-title">📝 默写：${escapeHtml(title || "")}</div>
+      <div class="muted" style="margin-bottom:8px">凭记忆写出完整解法（${escapeHtml(lang)}），提交后由审查小蜜蜂评判。</div>
+      <textarea id="recallCode" class="code" rows="12" placeholder="# 在这里默写完整代码…"></textarea>
+      <div id="recallReview"></div>
       <div class="audio-row">
-        <button class="btn primary" id="submitFinal">✅ 提交答案</button>
+        <button class="btn primary" id="recallSubmit">✅ 提交默写</button>
+        <button class="btn small ghost" id="recallClear">🧹 清空重来</button>
       </div>`;
-    Bee.say("所有步骤都学完啦！现在独立把完整代码默写出来吧。");
-    $("finalCode").focus();
-    enableTab($("finalCode")); // 支持 Tab 缩进
-    $("submitFinal").onclick = submitFinal;
-    // 整题作答框对齐由 CSS 完成
+    const ta = $("recallCode");
+    enableTab(ta);
+    ta.focus();
+    $("recallClear").onclick = () => { ta.value = ""; ta.focus(); };
+    $("recallSubmit").onclick = async () => {
+      const code = ta.value;
+      if (!code.trim()) { toast("先写点什么再提交呀～"); return; }
+      $("recallReview").innerHTML = '<div class="muted"><span class="spinner"></span> 审查小蜜蜂正在审查…</div>';
+      try {
+        const res = await API.review(pid, -1, code, true);
+        renderRecallReview(res);
+      } catch (e) {
+        $("recallReview").innerHTML = '<div class="muted">审查失败：' + (e.message || "请确认已配置模型 Key") + '</div>';
+      }
+    };
   }
-
-  async function submitFinal() {
-    const p = state.problem;
-    const code = $("finalCode").value;
-    const btn = $("submitFinal"); btn.disabled = true;
-    $("reviewArea").innerHTML = '<div class="muted"><span class="spinner"></span> 审查小蜜蜂正在审查…</div>';
-    let res;
-    try { res = await API.review(p.id, -1, code, true); }
-    catch (e) { toast("审查失败"); btn.disabled = false; return; }
-    finishReview(res, "final");
+  function renderRecallReview(res) {
+    const label = { none: "✅ 完全正确", minor: "🟡 有小问题", major: "🔴 错误较大" }[res.severity] || res.severity;
+    const fb = (res.review && res.review.feedback) || "";
+    const hint = (res.review && res.review.hint) ? `<br/><span class="muted">提示：${escapeHtml(res.review.hint)}</span>` : "";
+    $("recallReview").innerHTML = `<div class="review-box ${res.severity}"><b>${label}</b><br/>${escapeHtml(fb)}${hint}</div>`;
   }
 
   // ---------------------------------------------------------- 已做题集 / 复习轨迹
@@ -776,11 +671,101 @@
     if ($("btnArchive").dataset.mode === "return") returnToLearn();
     else openArchive();
   });
+
+  // ---------------------------------------------------------- 模型配置（右上角按钮切换）
+  $("btnModelConfig").addEventListener("click", onModelConfigClick);
+  $("btnCfgSave").addEventListener("click", onCfgSave);
+  $("cfgProvider").addEventListener("change", onProviderChange);
+
+  function currentScreen() {
+    for (const s of screens) if (!$(s).classList.contains("hidden")) return s;
+    return "screenStartBox";
+  }
+  function setModelCfgBtn(mode) {
+    const b = $("btnModelConfig");
+    if (mode === "return") {
+      b.textContent = "← 回到原页面";
+      b.dataset.mode = "return";
+      b.title = "返回刚才的页面";
+    } else {
+      b.textContent = "⚙️ 配置模型";
+      b.dataset.mode = "config";
+      b.title = "配置使用的模型";
+    }
+  }
+  function onModelConfigClick() {
+    const b = $("btnModelConfig");
+    if (b.dataset.mode === "return") {
+      showScreen(returnScreen);
+      setModelCfgBtn("config");
+    } else {
+      returnScreen = currentScreen();
+      loadModelConfig();
+      showScreen("screenModelConfig");
+      setModelCfgBtn("return");
+    }
+  }
+  async function loadModelConfig() {
+    try {
+      const c = await API.configGet();
+      if (c.provider) $("cfgProvider").value = c.provider;
+      if (c.base_url) $("cfgBaseUrl").value = c.base_url;
+      if (c.model_name) $("cfgModel").value = c.model_name;
+      if (c.language) $("cfgLang").value = c.language;
+      $("cfgApiKey").value = "";
+      $("cfgApiKey").placeholder = c.has_key ? "已保存（留空则保持不变）" : "sk-...";
+      onProviderChange();
+      $("cfgMsg").textContent = "";
+      $("cfgMsg").className = "config-msg";
+    } catch (e) {
+      $("cfgMsg").textContent = "读取当前配置失败：" + e.message;
+      $("cfgMsg").className = "config-msg err";
+    }
+  }
+  function onProviderChange() {
+    const p = $("cfgProvider").value;
+    if (p === "deepseek") {
+      if (!$("cfgBaseUrl").value) $("cfgBaseUrl").value = "https://api.deepseek.com";
+      if (!$("cfgModel").value) $("cfgModel").value = "deepseek-chat";
+    } else if (p === "openai") {
+      if (!$("cfgBaseUrl").value) $("cfgBaseUrl").value = "https://api.openai.com/v1";
+      if (!$("cfgModel").value) $("cfgModel").value = "gpt-4o";
+    }
+    // custom：保持用户填写，不预填
+  }
+  async function onCfgSave() {
+    const payload = {
+      provider: $("cfgProvider").value,
+      base_url: $("cfgBaseUrl").value.trim(),
+      model_name: $("cfgModel").value.trim(),
+      api_key: $("cfgApiKey").value.trim(),
+      language: $("cfgLang").value,
+    };
+    const msg = $("cfgMsg");
+    msg.className = "config-msg";
+    msg.textContent = "测试中…";
+    try {
+      const r = await API.configSave(payload);
+      if (r.ok) {
+        try { localStorage.setItem("lico-lang", payload.language); } catch {}
+        const st = await API.status();
+        $("modelBadge").textContent = st.model_label;
+        toast("模型配置已保存");
+        showScreen(returnScreen);
+        setModelCfgBtn("config");
+      } else {
+        msg.className = "config-msg err";
+        msg.textContent = "❌ " + (r.error || "保存失败");
+      }
+    } catch (e) {
+      msg.className = "config-msg err";
+      msg.textContent = "❌ 请求失败：" + e.message;
+    }
+  }
   // 从「已做题集」页返回学习页：若仍有正在学习的题，回到该题；否则进入开始盒子
   function returnToLearn() {
     if (state.problem) {
       showScreen("screenLearn");
-      Bee.hideHand();
     } else {
       enterStartBox(false);
     }
@@ -806,10 +791,10 @@
 
   const TYPE_LABEL = {
     problem_generated: "出题：生成题目", problem_started: "开始学习",
-    listen_problem: "听题", read_problem: "朗读题目", skip_problem: "跳过朗读题目",
-    explanation_generated: "生成讲解", listen_example: "听例子", read_example: "朗读例子", skip_example: "跳过朗读例子",
-    steps_generated: "生成分步", listen_step: "听某步", read_step: "朗读某步", skip_step: "跳过朗读某步",
-    step_copy: "抄写内容", code_reviewed: "代码审查", problem_done: "完成本题",
+    listen_problem: "听题", read_problem: "朗读题目",
+    explanation_generated: "生成讲解", listen_example: "听例子", read_example: "朗读例子",
+    steps_generated: "生成分步", listen_step: "听某步", read_step: "朗读某步",
+    step_copy: "抄写内容", copy_line: "抄写逐行比对", copy_skip: "抄写跳行", code_reviewed: "代码审查", problem_done: "完成本题",
   };
 
   async function showTrajectory(pid) {

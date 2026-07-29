@@ -118,10 +118,10 @@ html, body {
 /* 木偶提线 */
 .string { stroke: #d9c48b; stroke-width: 1.2; opacity: .5; }
 
-/* 语音气泡 */
+/* 语音气泡：锚定在蜜蜂右侧，跟随蜜蜂停在左上角（蜜蜂默认 left:60/top:20，宽150，右缘约210） */
 .speech {
-  position: absolute; left: 50%; top: 6px; transform: translateX(60px);
-  max-width: 360px; background: #fff; border: 2px solid var(--honey);
+  position: absolute; left: 220px; top: 28px; transform: none;
+  max-width: 380px; background: #fff; border: 2px solid var(--honey);
   border-radius: 16px; padding: 12px 16px; font-size: 14px; line-height: 1.5;
   box-shadow: var(--shadow); z-index: 21; pointer-events: auto;
   animation: pop .3s ease;
@@ -130,14 +130,7 @@ html, body {
   content: ""; position: absolute; left: -10px; top: 24px;
   border: 8px solid transparent; border-right-color: var(--honey);
 }
-@keyframes pop { from { transform: translateX(60px) scale(.8); opacity: 0; } }
-
-/* 手势提示 */
-.hand-hint {
-  position: absolute; font-size: 40px; z-index: 25;
-  animation: tap 1s ease-in-out infinite; pointer-events: none;
-}
-@keyframes tap { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-14px);} }
+@keyframes pop { from { transform: scale(.8); opacity: 0; } }
 
 /* ---------------- 通用屏幕/卡片 ---------------- */
 .screen { max-width: 1120px; margin: 0 auto; padding: 8px 26px 60px; }
@@ -159,6 +152,14 @@ html, body {
 .config-msg { margin-top: 14px; font-weight: 600; min-height: 22px; }
 .config-msg.ok { color: var(--green); }
 .config-msg.err { color: var(--red); }
+
+/* 模型配置页：左对齐表单 + 标签间距（复用 .config-card/.input/.config-msg） */
+#screenModelConfig .config-card { max-width: 520px; text-align: left; }
+#screenModelConfig .config-card h2 { text-align: center; }
+#screenModelConfig .muted { text-align: center; margin-bottom: 8px; }
+#screenModelConfig label { display: block; margin: 16px 0 6px; font-weight: 600; color: var(--ink); }
+#screenModelConfig .input { width: 100%; box-sizing: border-box; }
+#screenModelConfig .btn.primary { margin-top: 22px; width: 100%; }
 
 /* 开始盒子 */
 .start-box {
@@ -520,3 +521,181 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .spinner { display:inline-block; width:16px;height:16px;border:3px solid #f0dca0;
   border-top-color: var(--honey-deep); border-radius:50%; animation: spin .8s linear infinite; vertical-align:-3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 讲解页 / 抄写页：居中单栏（隐藏左题目列，work-card 居中） */
+.learn-grid.single-col { grid-template-columns: min(820px, 100%); justify-content: center; }
+.learn-grid.single-col .problem-card { display: none; }
+.learn-grid.single-col .work-card { max-width: 820px; }
+
+/* 抄写页：逐行抄写（逐字比对） */
+.copy-progress { font-size: 13px; color: var(--honey-deep); font-weight: 600; margin-bottom: 8px; }
+.copy-target {
+  font-family: "JetBrains Mono", Consolas, monospace; font-size: 15px; line-height: 1.7;
+  background: #fff4d6; border: 2px solid var(--honey); border-radius: 10px;
+  padding: 12px 14px; margin: 6px 0 14px; white-space: pre-wrap; word-break: break-all;
+  color: var(--ink); letter-spacing: 0.3px;
+}
+.copy-input {
+  min-height: auto !important; height: 54px; border: 2px solid var(--line); background: #fffdf6;
+}
+.copy-input:focus { border-color: var(--honey); background: #fffef9; }
+.copy-msg { font-size: 13px; min-height: 20px; margin-top: 8px; font-weight: 600; }
+.copy-msg.err { color: var(--red); }
+.copy-msg.ok { color: var(--green); }
+
+/* 抄写页：上半「已抄历史」累积区（写过的行不再消失，可向上滚动回看） */
+.copy-done {
+  background: #fff8e6;
+  border: 1.5px dashed var(--honey);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.copy-done-head {
+  font-size: 13px;
+  color: var(--honey-deep);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.copy-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.copy-history li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 2px 0;
+  color: var(--ink);
+  opacity: 0.9;
+}
+.copy-history .ok { flex: 0 0 auto; color: var(--green); font-weight: 700; }
+.copy-history .num {
+  flex: 0 0 auto;
+  color: var(--honey-deep);
+  min-width: 32px;
+  text-align: right;
+  opacity: 0.7;
+  font-weight: 600;
+}
+.copy-history code {
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1 1 auto;
+}
+
+/* === 讲解页：本步新增代码（inc-hl）高亮加粗 + 蜂蜜色下划线，吸眼球 === */
+.explain-hint {
+  font-size: 13px;
+  color: var(--honey-deep);
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+.inc-hl {
+  font-weight: 700;
+  color: var(--ink);
+  background: linear-gradient(transparent 55%, #fff0aa 55%);
+  border-left: 4px solid var(--honey-deep);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+/* === 抄写页：单框（说明 banner + 累积 stage） === */
+.copy-card {
+  border: 2px dashed var(--honey);
+  background: #fffcef;
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 6px 22px rgba(230, 170, 40, 0.14);
+  max-width: 820px;
+  margin: 0 auto;
+}
+.copy-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--honey);
+  background: #fff6df;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.copy-banner-label {
+  color: var(--honey-deep);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.copy-banner-text {
+  color: var(--ink);
+  font-family: "JetBrains Mono", Consolas, monospace !important;
+  font-size: 14px;
+  letter-spacing: .02em;
+}
+.copy-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.copy-target.ghost-line.done {
+  opacity: .9;
+  pointer-events: none;
+  background: #fffdf5;
+  border-style: solid;
+}
+
+/* === 描红模板：每字符包成 .gh；未敲 → 浅色半透明；敲对 → 黑加粗蜂蜜；错 → 红 === */
+.ghost-line {
+  font-family: "JetBrains Mono", Consolas, monospace !important;
+  font-size: 15px;
+  line-height: 1.7;
+  background: #fff4d6;
+  border: 2px solid var(--honey);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 32px;
+}
+.gh {
+  color: rgba(76, 55, 35, 0.28);
+  border-radius: 2px;
+  transition: color 0.08s, background 0.08s;
+}
+.gh.typed {
+  color: var(--ink);
+  font-weight: 700;
+  background: #fff0aa;
+}
+.gh.err {
+  color: var(--red);
+  background: #ffe0d6;
+  font-weight: 700;
+}
+.gh-empty {
+  color: rgba(76, 55, 35, 0.5);
+  font-style: italic;
+}
+
+/* 默写版侧栏题目列表（复用归档列表观感） */
+.recall-item {
+  padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+  margin: 8px 0; cursor: pointer; transition: .15s; display: flex; align-items: center; gap: 8px;
+}
+.recall-item:hover { background: #fff6df; }
+.recall-item.active { background: #fff0cf; border-color: var(--honey); }
+.recall-item .recall-title { font-weight: 600; }
+.recall-item .status-dot { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.recall-item .status-dot.done { background: #e6f6ec; color: #2e8b57; }
+.recall-item .status-dot.learning { background: #fff2dc; color: #b4551a; }

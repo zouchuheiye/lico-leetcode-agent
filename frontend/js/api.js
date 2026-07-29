@@ -12,16 +12,26 @@ const API = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!r.ok) {
+      let msg = "HTTP " + r.status;
+      try { const j = await r.json(); msg = j.detail || j.error || msg; } catch (e) {}
+      const err = new Error(msg); err.status = r.status; throw err;
+    }
     return r.json();
   },
   async _get(path) {
     const r = await fetch(path);
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!r.ok) {
+      let msg = "HTTP " + r.status;
+      try { const j = await r.json(); msg = j.detail || j.error || msg; } catch (e) {}
+      const err = new Error(msg); err.status = r.status; throw err;
+    }
     return r.json();
   },
   status() { return this._get("/api/status"); },
   testKey(api_key) { return this._post("/api/config/test", { api_key }); },
+  configGet() { return this._get("/api/config"); },
+  configSave(body) { return this._post("/api/config/save", body); },
   start(seq) { return this._post("/api/learn/start", { seq, language: _getLang() }); },
   explain(problem_id) { return this._post("/api/learn/explain", { problem_id, language: _getLang() }); },
   steps(problem_id) { return this._post("/api/learn/steps", { problem_id, language: _getLang() }); },

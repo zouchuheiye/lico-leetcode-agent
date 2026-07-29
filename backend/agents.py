@@ -14,21 +14,33 @@ from typing import Optional
 import httpx
 
 from config import DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, REQUEST_TIMEOUT
+import storage
 import fallback_problems as fb
 
 
+class AgentError(Exception):
+    """Agent 调用模型失败或无有效输出时抛出，由 main.py 转成 502 透传给前端。"""
+    pass
+
+
 # ---------------------------------------------------------------- 底层调用
-def test_connection(api_key: str) -> dict:
-    """连接测试：Key 有效返回 ok=True（对应发条转动）。"""
+def test_connection(api_key: str, base_url: str = None, model: str = None) -> dict:
+    """连接测试：Key 有效返回 ok=True（对应发条转动）。
+
+    base_url / model 缺省时回退到已保存的配置，再回退到硬编码默认值，
+    因此既支持「保存前的即时测连」（显式传入），也兼容旧调用（仅传 Key）。
+    """
     if not api_key or not api_key.strip():
         return {"ok": False, "error": "Key 为空，发条上不了。"}
+    base_url = base_url or storage.get_config("model_base_url") or DEEPSEEK_BASE_URL
+    model = model or storage.get_config("model_name") or DEEPSEEK_MODEL
     try:
         resp = httpx.post(
-            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}",
                      "Content-Type": "application/json"},
             json={
-                "model": DEEPSEEK_MODEL,
+                "model": model,
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 1,
                 "stream": False,
@@ -45,12 +57,18 @@ def test_connection(api_key: str) -> dict:
 
 
 def _chat(api_key: str, system: str, user: str, temperature: float = 0.5,
-          json_mode: bool = True) -> Optional[str]:
-    """调用 DeepSeek chat；失败返回 None 交由上层 fallback。"""
+          json_mode: bool = True, base_url: str = None, model: str = None) -> Optional[str]:
+    """调用模型 chat；失败返回 None 交由上层 fallback。
+
+    base_url / model 缺省时回退到已保存配置再回退硬编码默认值，
+    使后台「配置模型」页设置的模型真正生效（gen_* 调用无需逐个改签名）。
+    """
     if not api_key:
         return None
+    base_url = base_url or storage.get_config("model_base_url") or DEEPSEEK_BASE_URL
+    model = model or storage.get_config("model_name") or DEEPSEEK_MODEL
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -62,7 +80,7 @@ def _chat(api_key: str, system: str, user: str, temperature: float = 0.5,
         payload["response_format"] = {"type": "json_object"}
     try:
         resp = httpx.post(
-            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}",
                      "Content-Type": "application/json"},
             json=payload,
@@ -108,48 +126,78 @@ def gen_problem(api_key: str, seq: int, language: str = "python") -> dict:
                 "statement": data.get("statement"),
                 "examples": data.get("examples", []),
                 "constraints": data.get("constraints", [])}
-    return fb.fallback_content(seq)
+    raise AgentError(
+        "出题失败：模型未返回有效题面。请确认已在设置中配置有效的模型 Key，"
+        "且当前网络可访问该模型服务。"
+    )
 
 
 # ---------------------------------------------------------------- 讲解 Agent
 def gen_explanation(api_key: str, problem: dict, language: str = "python") -> str:
-    """生成通俗讲解，返回纯文本字符串（不使用 markdown 标记）。"""
+    """生成通俗讲解，返回纯文本字符串（不使用 markdown 标记）。
+
+    关键：把当前题目的标题/难度/题面/示例/约束作为结构化变量注入 prompt，
+    并显式约束「只能基于本题目讲解、严禁套用其它题（尤其两数之和）」，
+    避免模型退化成讲解通用模板。
+    """
     system = (
         "你是最会讲题的小蜜蜂 lico。请用通俗易懂、形象生动、像讲故事一样的语言，"
-        "讲解这道算法题的解题思路。\n"
-        "要求：\n"
-        "1. 每一段都要有生活化比喻（手算、排队、流水、收纳、走路、地图、做菜等任选）。\n"
-        "2. 语言口语化，不要教科书腔。\n"
-        "3. 只返回讲解正文，不要使用任何 markdown 格式标记（不要 #、**、` 等符号）。\n"
+        "讲解【下面题目】字段里给出的这道算法题的解题思路。\n"
+        "硬性要求：\n"
+        "1. 必须且只能基于下方【题目】提供的内容讲解，严禁套用其它题"
+        "（尤其严禁默认成\"两数之和\"或其它通用模板）。\n"
+        "2. 每一段都要有生活化比喻（手算、排队、流水、收纳、走路、地图、做菜等任选）。\n"
+        "3. 语言口语化，不要教科书腔。\n"
+        "4. 只返回讲解正文纯文本，不要使用任何 markdown 格式标记（不要 #、**、` 等符号），"
+        "也不要用 JSON 包裹。"
     )
+    content = problem.get("content") or {}
     user = (
-        f"题目：{problem['title']}\n"
-        f"描述：{problem['content'].get('statement','')}\n"
-        f"示例：{problem['content'].get('examples', [])}\n"
-        "请讲解解题思路。"
+        f"【题目】\n"
+        f"标题：{problem.get('title', '')}\n"
+        f"难度：{problem.get('difficulty', '')}\n"
+        f"题面：{content.get('statement', '')}\n"
+        f"示例：{content.get('examples', [])}\n"
+        f"约束：{content.get('constraints', [])}\n\n"
+        "请只针对上面这一道题，讲解它的解题思路"
+        "（不要讲成通用模板，更不要讲成两数之和）。"
     )
-    data = _chat(api_key, system, user, temperature=0.7)
+    data = _chat(api_key, system, user, temperature=0.7, json_mode=False)
     if data and data.strip():
         return data.strip()
-    # 兜底：离线讲解字符串
-    return fb.fallback_explanation(problem["slug"]).get("explanation", "")
+    raise AgentError(
+        "讲解生成失败：模型未返回有效内容。请确认已在设置中配置有效的模型 Key，"
+        "且当前网络可访问该模型服务。"
+    )
 
 
 # ---------------------------------------------------------------- 分解 Agent
-def gen_steps(api_key: str, problem: dict, language: str = "python") -> list:
+def gen_steps(api_key: str, problem: dict, explanation: str = "", language: str = "python") -> list:
+    expl_hint = explanation.strip() if explanation else "（暂无前置讲解文本，请直接按题面拆解）"
     system = (
-        f"你擅长把算法代码按难度拆解成循序渐进的若干步骤（3~5步）。"
-        f"只返回 JSON，字段：steps(数组)。每个 step 含："
-        f"index(从0开始的序号), title(该步标题), explanation(这一步在做什么), "
+        "你擅长把算法代码按难度拆解成循序渐进的步骤。下面先给你一段已经讲给学员的通俗讲解，"
+        "请基于它来做代码分解——保证「讲解里说的思路」和「代码实际写的」完全一致，"
+        "不要出现讲解提了但代码没体现、或代码有但讲解没说的脱节。\n"
+        "拆分规则：\n"
+        "1. 步骤数量由你根据解法复杂度自行决定，必须在 3~5 步之间（含 3 和 5）。\n"
+        "2. 每一步的「代码量」尽量平均（行数、逻辑量大致相当），不要某一步特别长、另一步仅一行；"
+        "在平均的前提下，必须保证这一步的内容被完整讲清楚、代码在该步状态下完整可运行。\n"
+        f"3. 只返回 JSON，字段 steps(数组)。每个 step 含："
+        f"index(从0开始的序号), title(简短标题), "
+        f"explanation(这一步在做什么，口语化，呼应前面讲解里的比喻), "
         f"incremental_code(【本步新增】的 {language} 代码，只写这一步新加的部分，"
-        f"不要重复写之前步骤已有的代码；逐行都要有中文注释解释为什么这么写)。"
-        f"注意：第 0 步的 incremental_code 就是完整函数开头；后续每一步只写在上一步基础上新追加的行。"
-        f"最后一步应是让整段代码成为完整可运行解法的那次追加。"
+        f"不要重复之前步骤已有的代码；逐行都要有中文注释解释为什么这么写)。\n"
+        "4. 第 0 步的 incremental_code 就是完整函数开头；后续每一步只写在上一步基础上新追加的行。"
+        "最后一步应是让整段代码成为完整可运行解法的那次追加。\n"
+        "5. 各步 incremental_code 按顺序首尾相接，必须恰好等于完整解法代码；"
+        "除非空行本身属于代码逻辑，否则不要在步骤之间插入额外空行。"
     )
     user = (
-        f"题目：{problem['title']}\n"
-        f"描述：{problem['content'].get('statement','')}\n"
-        "请给出分步手撕方案，每步只给增量代码。"
+        f"【前面已讲给学员的通俗讲解】\n{expl_hint}\n\n"
+        f"【题目】\n题目：{problem['title']}\n"
+        f"描述：{problem['content'].get('statement','')}\n\n"
+        "请基于上面的讲解给出分步手撕方案，每步只给增量代码；"
+        "步数你自己定（3~5步），各步代码量尽量平均，且完整覆盖解法。"
     )
     data = _parse_json(_chat(api_key, system, user, temperature=0.4))
     if data and isinstance(data.get("steps"), list) and data["steps"]:
@@ -180,10 +228,9 @@ def gen_steps(api_key: str, problem: dict, language: str = "python") -> list:
             })
         _annotate_incremental(steps)
         return steps
-    # 兜底：离线题库提供的是累积代码，剥出增量
-    steps = fb.fallback_steps(problem["slug"])
-    _annotate_incremental(steps)
-    return steps
+    raise AgentError(
+        "步骤分解失败：模型未返回有效分步。请确认已配置有效的模型 Key 且网络可访问。"
+    )
 
 
 def _annotate_incremental(steps: list) -> None:
@@ -240,7 +287,9 @@ def review_code(api_key: str, problem: dict, step: Optional[dict], user_code: st
             "feedback": data.get("feedback", ""),
             "hint": data.get("hint", ""),
         }
-    return _heuristic_review(user_code, reference, is_final)
+    raise AgentError(
+        "代码审查失败：模型未返回有效结论。请确认已配置有效的模型 Key 且网络可访问。"
+    )
 
 
 def _heuristic_review(user_code: str, reference: str, is_final: bool) -> dict:

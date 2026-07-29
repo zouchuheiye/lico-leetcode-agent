@@ -2,7 +2,6 @@
 const Bee = (function () {
   const el = document.getElementById("beeSvg");
   const speechEl = document.getElementById("speech");
-  const handEl = document.getElementById("handHint");
 
   // ---------------- SVG 形象（含提线、发条钥匙、扇动的翅膀）----------------
   el.innerHTML = `
@@ -275,18 +274,8 @@ const Bee = (function () {
   }
   function hideSpeech() { speechEl.classList.add("hidden"); }
 
-  // 手势提示指向某元素
-  function pointAt(target) {
-    if (!target) { handEl.classList.add("hidden"); return; }
-    const r = target.getBoundingClientRect();
-    handEl.style.left = (r.left + r.width / 2 - 20) + "px";
-    handEl.style.top = (r.top - 46) + "px";
-    handEl.classList.remove("hidden");
-  }
-  function hideHand() { handEl.classList.add("hidden"); }
-
   return {
     flyIn, setWinding, jam, happy, stopAll, say, hideSpeech,
-    speak, stopSpeak, speakHL, stopHL, talk, pointAt, hideHand,
+    speak, stopSpeak, speakHL, stopHL, talk,
   };
 })();
