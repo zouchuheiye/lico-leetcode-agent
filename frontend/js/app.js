@@ -440,11 +440,12 @@
   // 抄写页（描红式、单框草稿纸、逐字变黑；已抄行常驻可见可点改，未抄行隐藏）：
   //   - .copy-card 一张草稿纸，内部竖排 N 行代码行（无说明行、无 banner，直接开始抄）。
   //   - 行可见性按"已抄/未抄"判定：索引 > maxReached → invisible（未抄，看不见）；
-  //     === cursor → current（浅色描红 + 隐藏输入行）；其余已抄行 → done（黑字、可点回改）。
-  //   - 当前行：隐藏 #copyInput 接收键盘，敲过/敲对的字符变黑，没敲到的目标字符浅色（无报错、无比对阻断）。
-  //   - 回车：存下本行用户文本并前进（不检查对错）；若处于"点回改"临时状态，回车后跳回 maxReached 继续。
-  //   - 点击任意已抄代码行 → 临时进入该行编辑（载入已存文本），其余已抄行仍可见；回车回到最前行。
-  //   - # 注释行：不抄、直接展示（自动跳过，不计入需抄行数）。
+  //     === cursor → current；其余已抄行 → done（黑字、可点回改）。
+  //   - 代码行（当前行）：隐藏 #copyInput 接收键盘，敲过/敲对的字符变黑，没敲到的目标字符浅色。
+  //   - 注释行（当前行）：用户不抄，**逐字出现**（120ms/字，全字显示完 250ms 后自动 commitLine 推进）。
+  //   - 回车：代码行存本行文本并前进；注释行可立即跳过当前播放。
+  //   - 点击任意已抄行（代码或注释） → 临时进入该行编辑/重播，回车回到最前行。
+  //   - 注释行不计入 totalCopy。
   //   - 右上角"📝 抄写完了"按钮：随时结束本题抄写。
   function renderCopy() {
     const p = state.problem;
@@ -455,8 +456,10 @@
     const isComment = (s) => s.trim().startsWith("#");
     const totalCopy = lines.filter((l) => !isComment(l)).length; // 需要抄的行数（注释不计入）
     let cursor = 0;        // 当前正在编辑的行（lines 数组 0-based 索引）
-    let maxReached = 0;    // 已抄到的最远 lines 索引（初始 0 → 第一行直接 current 可抄）
-    const lineText = new Array(lines.length).fill(null); // 每行用户实际敲的内容
+    let maxReached = 0;    // 已抄到的最远 lines 索引
+    const lineText = new Array(lines.length).fill(null); // 每行用户实际敲的内容（注释行存整行）
+    let commentTimer = null;                              // 注释行逐字播放定时器
+    function clearCommentTimer() { if (commentTimer) { clearTimeout(commentTimer); commentTimer = null; } }
     recordProgress("copy", state.stepIndex);
     setLayoutMode("single");
     const work = $("workCard");
@@ -483,7 +486,7 @@
       }
       return h;
     }
-    // 把光标插到当前行的第 pos 个字符之前（pos<=0 行首，pos>=字符数 行末）
+    // 把光标插到当前行的第 pos 个字符之前
     function moveCaret(lineEl, pos) {
       const old = lineEl.querySelector(".caret-blink");
       if (old) old.remove();
@@ -495,23 +498,20 @@
       else if (pos < glyphs.length) glyphs[pos].before(caret);
       else lineEl.appendChild(caret);
     }
-    // 同步描红：只做"敲过的字符变黑、没敲到的目标字符浅色"，不比对、不报错、不阻断
+    // 同步描红（代码行）：敲过的字符变黑、没敲到的目标字符浅色，不比对、不报错、不阻断
     function syncGhost(lineEl, input) {
       const target = lines[cursor];
       const spans = Array.from(lineEl.querySelectorAll(".gh"));
       for (let k = 0; k < spans.length; k++) {
         const tCh = target[k] === " " ? "&nbsp;" : escapeHtml(target[k] ?? "");
         if (k < input.length) {
-          // 用户已敲此位：显示其实际字符，黑色加粗（覆盖浅色目标）
           spans[k].classList.add("typed");
           spans[k].innerHTML = input[k] === " " ? "&nbsp;" : escapeHtml(input[k]);
         } else {
-          // 尚未敲到：恢复为浅色目标字
           spans[k].classList.remove("typed");
           spans[k].innerHTML = tCh;
         }
       }
-      // 敲超长：把多敲的字符追加到行末（黑色），保持可见
       if (input.length > target.length) {
         let extra = "";
         for (let k = target.length; k < input.length; k++) {
@@ -521,12 +521,40 @@
       }
       moveCaret(lineEl, input.length);
     }
-    // 注释行快进：当前若是 # 注释代码行，直接前进（不要求抄、直接展示）
-    function skipComments() {
-      while (cursor < lines.length && isComment(lines[cursor])) cursor++;
+    // 注释行逐字出现：每 120ms 标下一个字符 .typed；全字标完 250ms 后自动 commitLine 推进
+    function playCommentLine(lineEl, text) {
+      clearCommentTimer();
+      const spans = Array.from(lineEl.querySelectorAll(".gh"));
+      // 重置（覆盖点回改等场景）
+      spans.forEach((s) => s.classList.remove("typed"));
+      if (spans.length === 0) { // 空注释行：直接 250ms 后推进
+        commentTimer = setTimeout(() => {
+          lineText[cursor] = text;
+          cursor++;
+          maxReached = Math.max(maxReached, cursor);
+          renderStage();
+        }, 250);
+        return;
+      }
+      let k = 0;
+      const step = () => {
+        if (k >= spans.length) { // 全部播完，等 250ms 自动推进
+          commentTimer = setTimeout(() => {
+            lineText[cursor] = text;
+            cursor++;
+            maxReached = Math.max(maxReached, cursor);
+            renderStage();
+          }, 250);
+          return;
+        }
+        spans[k].classList.add("typed");
+        k++;
+        commentTimer = setTimeout(step, 120);
+      };
+      step();
     }
     function renderStage() {
-      skipComments();
+      clearCommentTimer();
       if (cursor >= lines.length) { finishCopy(); return; }
       let html = "";
       for (let i = 0; i < lines.length; i++) {
@@ -534,14 +562,18 @@
         const isCmt = isComment(text);
         let stat, inner;
         if (i > maxReached) stat = "invisible";   // 未抄到的未来行：看不见
-        else if (i === cursor) stat = "current";  // 当前编辑行：浅色描红
+        else if (i === cursor) stat = "current";  // 当前编辑行
         else stat = "done";                        // 已抄行：黑字常驻
         if (i === cursor) {
-          inner = ghostSpans(text);                // 当前行：浅色目标，待逐字变黑
+          // 当前行（无论代码还是注释）：用 ghostSpans 渲染浅色裸态
+          // 代码行：用户输入逐字变黑；注释行：playCommentLine 逐字标 .typed
+          inner = ghostSpans(text);
         } else if (isCmt) {
-          inner = escapeHtml(text);                // 注释行：直接展示
+          // 已播完的注释行：整行黑字斜体
+          inner = escapeHtml(text);
         } else {
-          inner = escapeHtml(lineText[i] != null ? lineText[i] : text); // 已抄行：用户实际敲的黑字
+          // 已抄完的代码行：用户实际敲的黑字
+          inner = escapeHtml(lineText[i] != null ? lineText[i] : text);
         }
         html += `<div class="copy-line ${stat}${isCmt ? " comment" : ""}" data-line="${i}">${inner}</div>`;
       }
@@ -553,34 +585,51 @@
       $("copyProgress").textContent = `已抄 ${copied} 行 / 共 ${totalCopy} 行`;
       const inp = $("copyInput");
       const lineEl = $stage.querySelector(".copy-line.current");
-      inp.value = lineText[cursor] != null ? lineText[cursor] : ""; // 载入已存文本（含点回改时）
-      inp.focus();
-      lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
-      syncGhost(lineEl, inp.value);
-      inp.addEventListener("blur", () => { if (cursor < lines.length) inp.focus(); });
-      inp.addEventListener("input", () => {
+      const isCmtCurrent = isComment(lines[cursor]);
+      if (isCmtCurrent) {
+        // 注释行：不接受键盘输入，input 留空（但仍渲染以保持 DOM 稳定）
+        inp.value = "";
+        inp.blur(); // 注释行播放时不让输入框抢焦点
+        lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
+        playCommentLine(lineEl, lines[cursor]);
+      } else {
+        // 代码行：正常描红输入
+        inp.value = lineText[cursor] != null ? lineText[cursor] : "";
+        inp.focus();
+        lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
         syncGhost(lineEl, inp.value);
-        $("copyMsg").textContent = "";
-      });
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitLine(); }
-        else if (e.key === "Tab") { // 4 空格缩进
-          e.preventDefault();
-          inp.value += "    ";
+        inp.addEventListener("blur", () => { if (cursor < lines.length && !isComment(lines[cursor])) inp.focus(); });
+        inp.addEventListener("input", () => {
           syncGhost(lineEl, inp.value);
-        }
-      });
+          $("copyMsg").textContent = "";
+        });
+        inp.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitLine(); }
+          else if (e.key === "Tab") { // 4 空格缩进
+            e.preventDefault();
+            inp.value += "    ";
+            syncGhost(lineEl, inp.value);
+          }
+        });
+      }
     }
-    // 回车：存本行文本并前进（不比对、不报错）；临时点回改时回车跳回最前行
+    // 回车：代码行存本行文本并前进；注释行可立即跳过当前播放
     function commitLine() {
-      lineText[cursor] = $("copyInput").value;
-      API.event(p.id, state.stepIndex, "copy_line", { line: cursor, text: lineText[cursor] }).catch(() => {});
+      clearCommentTimer();
+      const isCmt = isComment(lines[cursor]);
+      if (isCmt) {
+        // 注释行：把整行存为"已抄内容"（点回改能重看/重播）
+        lineText[cursor] = lines[cursor];
+      } else {
+        // 代码行：存用户实际输入
+        lineText[cursor] = $("copyInput").value;
+      }
+      API.event(p.id, state.stepIndex, "copy_line", { line: cursor, text: lineText[cursor], comment: isCmt }).catch(() => {});
       const inDetour = cursor < maxReached; // 正处于"点回改"临时状态
       if (inDetour) {
         cursor = maxReached; // 回到最前行继续
       } else {
         cursor++;
-        while (cursor < lines.length && isComment(lines[cursor])) cursor++; // 跳过注释
         maxReached = Math.max(maxReached, cursor);
         // 自动缩进：新行若是代码行，预填与"最近代码行"一致的缩进；块头行（行尾是 ":"）再加一级 4 空格
         if (cursor < lines.length && !isComment(lines[cursor])) {
@@ -590,7 +639,6 @@
             ? lineText[refIdx]
             : (refIdx >= 0 ? lines[refIdx] : "");
           let indent = (refText.match(/^(\s*)/) || ["", ""])[1];
-          // 块头识别：trimEnd 后以 ":" 结尾、且不是 # 注释行（避免字符串里的冒号被误判）
           const isBlockHeader = !refText.trimStart().startsWith("#") && refText.trimEnd().endsWith(":");
           if (isBlockHeader) indent += "    ";
           lineText[cursor] = indent;
@@ -598,13 +646,13 @@
       }
       renderStage();
     }
-    // 点击已抄代码行 → 临时进入该行编辑（其余已抄行仍可见）
+    // 点击已抄行（代码或注释） → 临时进入该行编辑/重播
     $stage.addEventListener("click", (e) => {
       const el = e.target.closest(".copy-line.done");
-      if (!el || el.classList.contains("comment")) return;
+      if (!el) return;
       const i = +el.dataset.line;
       if (i === cursor || i > maxReached) return;
-      cursor = i; // 进入临时编辑；maxReached 不变，故其余已抄行保持可见
+      cursor = i; // 进入临时编辑/重播；maxReached 不变，故其余已抄行保持可见
       renderStage();
     });
     $("copyFinishBtn").onclick = () => finishCopy();

@@ -666,15 +666,19 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .copy-line.current {
   background: rgba(230, 170, 40, 0.10);
 }
-/* # 注释行：直接展示、不参与描红，用灰色斜体提示"这是注释、不用抄" */
+/* # 注释行：浅绿底 + 墨绿斜体，与代码行的蜂蜜色背景区分；逐字出现用 .gh.typed 控制 */
+.copy-line.comment.current,
+.copy-line.comment.done {
+  background: rgba(110, 180, 100, 0.10);  /* 浅绿 */
+}
 .copy-line.comment .gh {
-  color: #9a8f7a;
+  color: #b5a98e;                          /* 未播到的字：浅灰斜体 */
   font-style: italic;
 }
 .copy-line.comment .gh.typed {
-  color: #9a8f7a;
+  color: #2d6a3e;                          /* 已播到的字：墨绿斜体 */
   background: transparent;
-  font-weight: 400;
+  font-weight: 500;
   font-style: italic;
 }
 
