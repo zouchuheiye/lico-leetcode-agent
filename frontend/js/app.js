@@ -394,7 +394,7 @@
       : `<button class="btn primary step-finish" id="nextStep">👉 看这步懂了，看下一步 →</button>`;
     const backBtn = i === 0
       ? `<button class="btn ghost" id="backToExample">← 返回举例</button>`
-      : "";
+      : `<button class="btn ghost" id="prevStep">← 上一步</button><button class="btn ghost" id="backToExample">← 返回举例</button>`;
     $("workCard").innerHTML = `
       ${stepDots(i)}
       <div class="section-title">🧩 第 ${i + 1} 步：${escapeHtml(step.title || "")}</div>
@@ -433,6 +433,9 @@
       else { state.stepIndex = i + 1; renderExplainSteps(); }
     };
     if (i === 0) {
+      $("backToExample").onclick = () => renderExplain(state.problem.explanation);
+    } else {
+      $("prevStep").onclick = () => { state.stepIndex = i - 1; renderExplainSteps(); };
       $("backToExample").onclick = () => renderExplain(state.problem.explanation);
     }
   }
