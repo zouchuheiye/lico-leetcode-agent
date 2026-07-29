@@ -176,6 +176,21 @@ def learn_start(body: StartBody):
     return {"finished": False, "problem": problem, "resume": False, "checkpoint": None}
 
 
+@app.get("/api/learn/problem/{problem_id}")
+def learn_problem(problem_id: int):
+    """只读聚合：返回某题完整可渲染数据（题面 + 已生成讲解/步骤 + 断点），用于「平行时空」复习。无写入。"""
+    problem = storage.get_problem(problem_id)
+    if not problem:
+        raise HTTPException(404, "题目不存在")
+    return {
+        "problem": problem,
+        "explanation": problem.get("explanation"),
+        "steps": problem.get("steps"),
+        "checkpoint": problem.get("checkpoint"),
+        "status": problem.get("status"),
+    }
+
+
 @app.post("/api/learn/explain")
 def learn_explain(body: ProblemBody):
     problem = storage.get_problem(body.problem_id)

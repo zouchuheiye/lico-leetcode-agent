@@ -45,6 +45,7 @@ const API = {
     return this._post("/api/learn/progress", { problem_id, phase, step_index });
   },
   done(problem_id) { return this._post("/api/learn/done", { problem_id }); },
+  problem(id) { return this._get("/api/learn/problem/" + id); },
   problems() { return this._get("/api/problems"); },
   trajectory(problem_id) { return this._get("/api/trajectory/" + problem_id); },
 };

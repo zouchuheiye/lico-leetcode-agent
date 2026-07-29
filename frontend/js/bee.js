@@ -135,16 +135,52 @@ const Bee = (function () {
       const backup = (containerEl.dataset.hlBackup != null)
         ? containerEl.dataset.hlBackup : containerEl.innerHTML;
       containerEl.dataset.hlBackup = backup;
-      const chars = Array.from(text);
+      // 结构化高亮：遍历容器内文本节点逐字包 span，保留 <p>/<br> 等标签结构。
+      // 修复"听讲解会把分段弄丢"：不再整体清空容器重排成一条无分段字符流。
+      function buildHighlight(root) {
+        const spans = [];
+        const pauseAfter = []; // 与 spans 对齐，单位 ms（行/段边界停顿）
+        const BLOCK = /^(p|div|li|h[1-6]|pre|blockquote|section|article)$/;
+        (function walk(node) {
+          if (node.nodeType === 3) {                 // 文本节点
+            const txt = node.nodeValue;
+            if (!txt) return;
+            const frag = document.createDocumentFragment();
+            for (const ch of txt) {
+              let c = ch;
+              if ("#*=>•👉`".includes(ch)) c = " ";  // 符号→空格（长度不变）
+              if (ch === "[" || ch === "]") continue; // 方括号删除（不生成 span、不朗读）
+              const s = document.createElement("span");
+              s.className = "tts-ch";
+              s.textContent = c;
+              frag.appendChild(s);
+              spans.push(s);
+              pauseAfter.push(0);
+            }
+            node.parentNode.replaceChild(frag, node);
+            return;
+          }
+          if (node.nodeType === 1) {                 // 元素节点
+            const tag = node.tagName.toLowerCase();
+            if (tag === "br") {                      // 换行 → 末尾补停顿
+              if (spans.length) pauseAfter[spans.length - 1] += 240;
+              return;
+            }
+            const had = spans.length;
+            Array.from(node.childNodes).forEach(walk);
+            if (BLOCK.test(tag) && spans.length > had) pauseAfter[spans.length - 1] += 240; // 段后停顿
+            return;
+          }
+        })(root);
+        const speakText = spans.map((s) => s.textContent).join("");
+        return { spans, pauseAfter, speakText };
+      }
+      const built = buildHighlight(containerEl);
+      const spans = built.spans;
+      const pauseAfter = built.pauseAfter;
+      const speakText = built.speakText;
+      const chars = Array.from(speakText);
       const total = chars.length;
-      containerEl.innerHTML = "";
-      const spans = chars.map((ch) => {
-        const s = document.createElement("span");
-        s.className = "tts-ch";
-        s.textContent = ch;
-        containerEl.appendChild(s);
-        return s;
-      });
 
       // ---- 时间轴 + 标点停顿建模（修复"高亮比语音快"的核心）----
       // 每个普通字占 charDur 毫秒；每个标点在其后插入停顿，使高亮在标点处也"停一下"，
@@ -160,11 +196,12 @@ const Bee = (function () {
         acc += charDur;
         const p = PAUSE[chars[i]];
         if (p) acc += p;            // 该字符念完后、下一字前的停顿
+        if (pauseAfter[i]) acc += pauseAfter[i]; // 行/段边界停顿
       }
       const totalDur = acc;
 
       let rafId = null, t0 = 0, started = false, done = false, current = -1;
-      const utf16ToCp = (idx) => Array.from(text.slice(0, idx)).length;
+      const utf16ToCp = (idx) => Array.from(speakText.slice(0, idx)).length;
 
       function paint(target) {
         while (current < target && current + 1 < total) {
@@ -223,7 +260,7 @@ const Bee = (function () {
         resolve();
       }
 
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(speakText);
       const v = pickVoice();
       if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "zh-CN";
       u.pitch = opts.pitch != null ? opts.pitch : 1.4;

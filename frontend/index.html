@@ -22,7 +22,7 @@
       </div>
       <button class="btn ghost" id="btnArchive">📚 已做题集</button>
       <div class="model-badge" id="modelBadge">DeepSeek-V4</div>
-      <button class="btn ghost" id="btnRecall" data-mode="recall" title="打开默写版，凭记忆默写做过的题">📝 默写版</button>
+      <button class="btn ghost" id="btnRecall" data-mode="recall" title="打开默写板，凭记忆默写做过的题">📝 默写板</button>
       <button class="btn ghost" id="btnModelConfig" data-mode="config" title="配置使用的模型">⚙️ 配置模型</button>
     </div>
   </header>
@@ -56,6 +56,7 @@
 
   <!-- ============ 学习页 ============ -->
   <section id="screenLearn" class="screen hidden">
+    <button id="btnBackToNow" class="parallel-fab hidden" type="button" title="">⏱ 回到现在</button>
     <div class="learn-grid">
       <!-- 左：题目 -->
       <div class="card problem-card" id="problemCard">
@@ -93,22 +94,27 @@
         <div id="archiveList"></div>
       </div>
       <div class="card archive-detail">
-        <h3 id="archiveDetailTitle">选择左侧题目查看学习轨迹</h3>
+        <h3 id="archiveDetailTitle" class="archive-detail-head">
+          <span id="archiveDetailTitleText">选择左侧题目查看学习轨迹</span>
+          <span class="archive-detail-actions">
+            <button id="btnEnterParallel" class="btn small ghost hidden">🕰 回到这一题（平行时空）</button>
+          </span>
+        </h3>
         <div id="archiveDetail" class="trajectory"></div>
       </div>
     </div>
   </section>
 
-  <!-- ============ 默写版 ============ -->
+  <!-- ============ 默写板 ============ -->
   <section id="screenRecall" class="screen hidden">
     <div class="archive-grid">
       <div class="card archive-list">
-        <h3>📝 默写版 · 题目</h3>
+        <h3>📝 默写板 · 题目</h3>
         <div id="recallList"></div>
       </div>
       <div class="card archive-detail">
         <h3 id="recallDetailTitle">选择左侧题目，凭记忆默写</h3>
-        <div id="recallDetail" class="trajectory"></div>
+        <div id="recallDetail" class="recall-detail"></div>
       </div>
     </div>
   </section>

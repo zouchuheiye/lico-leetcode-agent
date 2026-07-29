@@ -292,6 +292,32 @@ html, body {
 /* 讲解正文分段：每段 3-5 行，段间留白，行距舒朗 */
 .explain-para { margin: 0 0 14px; line-height: 1.9; }
 .explain-para:last-child { margin-bottom: 0; }
+/* 逐段显现：未显现段落纯空白占位（visibility 保留高度、看不见、无背景色块） */
+.explain-para.locked { visibility: hidden; }
+/* 每段后"我懂了，显现下一段"按钮行 */
+.reveal-row { margin: 10px 0 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.reveal-next {
+  display: inline-block;
+  padding: 8px 18px;
+  font-size: 15px; font-weight: 600;
+  color: var(--honey-deep);
+  background: #fff7e0;
+  border: 1.5px solid var(--honey);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.reveal-next:hover { background: #fff0c8; }
+.reveal-speak {
+  display: inline-flex; align-items: center;
+  padding: 7px 12px;
+  font-size: 14px;
+  color: #8a6d1f;
+  background: #fffdf6;
+  border: 1.5px solid var(--honey);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.reveal-speak:hover { background: #fff7e0; }
 
 /* 讲解 markdown 渲染样式（蜂蜜主题） */
 .explain-text h3.sub-title {
@@ -492,9 +518,47 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .review-box.major { background:#fdecea; border:1px solid #f4c4bf; }
 
 /* 已做题集 */
-.archive-grid { display:grid; grid-template-columns: 300px 1fr; gap: 20px; }
-@media (max-width: 860px){ .archive-grid { grid-template-columns: 1fr; } }
-.archive-list h3, .archive-detail h3 { margin-top: 4px; }
+.archive-grid { display:grid; grid-template-columns: 300px 1fr; gap: 20px; height: calc(100vh - 130px); min-height: 0; }
+@media (max-width: 860px){ .archive-grid { grid-template-columns: 1fr; height: auto; } }
+/* 两列固定高度，各自内部滚动：左列题目列表 / 右列轨迹都靠滚轮翻阅，不被题数撑高整个页面 */
+.archive-list, .archive-detail { display: flex; flex-direction: column; min-height: 0; }
+.archive-list h3, .archive-detail h3 { margin-top: 4px; flex: 0 0 auto; }
+#archiveList { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-top: 6px; }
+@media (max-width: 860px){ .archive-list, .archive-detail { max-height: 72vh; } }
+/* 学习轨迹标题区：标题文字左、操作按钮右，同行对齐 */
+.archive-detail-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.archive-detail-head .archive-detail-title-text { flex: 1 1 auto; min-width: 0; }
+.archive-detail-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.archive-detail-actions .btn { white-space: nowrap; }
+/* 平行时空：仅在 screenLearn 右上角显示的小按钮（替代原来的横条） */
+.parallel-fab {
+  position: absolute;
+  top: 14px;
+  right: 34px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--honey, #f0c14b);
+  background: var(--honey-soft, #fff6df);
+  color: var(--honey-deep, #8a5a00);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(140, 90, 0, 0.12);
+  transition: transform .12s, box-shadow .12s, background .12s;
+}
+.parallel-fab:hover {
+  background: #ffe6a8;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 9px rgba(140, 90, 0, 0.18);
+}
+#screenLearn { position: relative; } /* 让 .parallel-fab 锚定到 screenLearn 的右上角 */
 .arch-item {
   padding: 12px 14px; border-radius: 12px; border:1px solid var(--line);
   margin: 8px 0; cursor: pointer; transition:.15s; display:flex; align-items:center; gap:8px;
@@ -504,7 +568,7 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .arch-item .status-dot { margin-left:auto; font-size:12px; padding:2px 8px; border-radius:10px; white-space:nowrap; }
 .arch-item .status-dot.done { background:#e6f6ec; color:#2e8b57; }
 .arch-item .status-dot.learning { background:#fff2dc; color:#b4551a; }
-.trajectory { max-height: 62vh; overflow:auto; }
+.trajectory { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .traj-item { padding: 10px 12px; border-left:3px solid var(--line); margin: 8px 0; background:#fbf6ea; border-radius:0 10px 10px 0; }
 .traj-item .t-type { font-weight:700; font-size:13px; color: var(--honey-deep); }
 .traj-item .t-time { font-size: 11px; color: var(--ink-soft); float:right; }
@@ -545,6 +609,11 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   border-radius: 8px; background: #fffdf6; color: var(--honey-deep); cursor: pointer; font-weight: 600;
 }
 .copy-back:hover { background: #fff6df; }
+.copy-reset {
+  font-size: 13px; padding: 6px 14px; border: 1px solid var(--honey);
+  border-radius: 8px; background: #fffdf6; color: var(--honey-deep); cursor: pointer; font-weight: 600;
+}
+.copy-reset:hover { background: #fff6df; }
 /* 隐藏输入框：接收键盘但视觉完全不可见，让"当前行"本身成为输入区 */
 .copy-hidden-input {
   position: absolute;
@@ -630,9 +699,8 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   border-radius: 16px;
   padding: 22px 24px;
   box-shadow: 0 6px 22px rgba(230, 170, 40, 0.14);
-  width: 961px;
+  width: 100%;                /* 自适应 work-card 内容区，避免横向溢出产生第二个滚动条 */
   min-height: 760px;          /* 短代码也能撑出草稿纸感；长代码自然长高 */
-  max-width: calc(100vw - 32px);
   margin: 0 auto;
 }
 .copy-stage {
@@ -732,7 +800,7 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   font-style: italic;
 }
 
-/* 默写版侧栏题目列表（复用归档列表观感） */
+/* 默写板侧栏题目列表（复用归档列表观感） */
 .recall-item {
   padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
   margin: 8px 0; cursor: pointer; transition: .15s; display: flex; align-items: center; gap: 8px;
@@ -743,3 +811,36 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .recall-item .status-dot { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
 .recall-item .status-dot.done { background: #e6f6ec; color: #2e8b57; }
 .recall-item .status-dot.learning { background: #fff2dc; color: #b4551a; }
+
+/* 默写板：左列列表内部独立滚轮（与归档列表一致） */
+#recallList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+/* 默写板：右列固定高度，默写框 flex 撑满、内部滚轮，按钮贴底 */
+.recall-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.recall-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#recallCode {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+  margin: 10px 0;
+}
+.recall-detail-body .audio-row {
+  flex: 0 0 auto;
+  margin-top: 8px;
+}
