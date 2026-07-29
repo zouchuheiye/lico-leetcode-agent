@@ -374,7 +374,7 @@
   });
 
   // 分步讲解页（居中、只读）：
-  //   - 每步展示 explanation + 本步新增代码（高亮加粗 inc-hl）
+  //   - 每步展示 explanation + 本步新增代码
   //   - 不是最后一步：底部「看这步懂了，看下一步」→ state.stepIndex++ 继续讲解
   //   - 是最后一步：底部「看这步懂了，进抄写」→ renderCopy（描红逐行）
   function renderExplainSteps() {
@@ -382,7 +382,7 @@
     const isLast = i === p.steps.length - 1;
     recordProgress("steps", i);
     setLayoutMode("single");
-    const inc = step.incremental_code || step.code || ""; // 本步新增的代码（高亮加粗）
+    const inc = step.incremental_code || step.code || ""; // 本步新增的代码
     const btn = isLast
       ? `<button class="btn primary step-finish" id="nextStep">📖 看这步懂了，进抄写 →</button>`
       : `<button class="btn primary step-finish" id="nextStep">👉 看这步懂了，看下一步 →</button>`;
@@ -390,7 +390,7 @@
       ${stepDots(i)}
       <div class="section-title">🧩 第 ${i + 1} 步：${escapeHtml(step.title || "")}</div>
       <div class="explain-text" id="stepExplain">${escapeHtml(step.explanation || "")}</div>
-      <div class="explain-hint">📝 本步新增的代码（高亮加粗）：</div>
+      <div class="explain-hint">📝 本步新增的代码：</div>
       <pre class="code inc-hl"><code>${escapeHtml(inc)}</code></pre>
       <div class="audio-row" data-audio>
         <button class="btn small" data-act="listen">🔊 听第 ${i + 1} 步</button>
