@@ -301,12 +301,30 @@
     renderExplain(p.explanation);
   }
 
+  // 把讲解长文切成多个自然段落（每段 3-5 行）：优先按空行分段，无空行时兜底每 4 行切一段
+  function renderParas(text) {
+    const raw = String(text).replace(/\r/g, "");
+    let blocks;
+    if (/\n\s*\n/.test(raw)) {
+      blocks = raw.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+    } else {
+      const lines = raw.split("\n");
+      blocks = [];
+      for (let i = 0; i < lines.length; i += 4) {
+        const b = lines.slice(i, i + 4).join("\n").trim();
+        if (b) blocks.push(b);
+      }
+    }
+    return blocks
+      .map((b) => `<p class="explain-para">${escapeHtml(b).replace(/\n/g, "<br/>")}</p>`)
+      .join("");
+  }
   function renderExplain(ex) {
     // 兼容：旧版 explanation 是字符串；5字段版是对象（历史缓存）
     const explanation = (ex && typeof ex === "object") ? (ex.explanation || "") : (ex || "");
     $("workCard").innerHTML = `
       <div class="section-title">💡 讲解</div>
-      <div class="explain-text" id="explainBody">${escapeHtml(explanation)}</div>
+      <div class="explain-text" id="explainBody">${renderParas(explanation)}</div>
       ${AUDIO_ROW("开始听例子")}
       ${LANG_PICKER}
       <button class="btn ghost" id="backToProblem">← 返回题目</button>`;

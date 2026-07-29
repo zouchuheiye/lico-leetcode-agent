@@ -289,6 +289,9 @@ html, body {
 .section-title { font-weight: 800; font-size: 16px; margin: 4px 0 10px; display:flex; align-items:center; gap:8px; }
 .explain-text { line-height: 1.85; color: var(--ink); }
 .explain-text p { margin: 8px 0; }
+/* 讲解正文分段：每段 3-5 行，段间留白，行距舒朗 */
+.explain-para { margin: 0 0 14px; line-height: 1.9; }
+.explain-para:last-child { margin-bottom: 0; }
 
 /* 讲解 markdown 渲染样式（蜂蜜主题） */
 .explain-text h3.sub-title {
