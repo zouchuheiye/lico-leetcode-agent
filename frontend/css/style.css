@@ -666,20 +666,10 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
 .copy-line.current {
   background: rgba(230, 170, 40, 0.10);
 }
-/* # 注释行：浅绿底，与代码行的蜂蜜色背景区分；逐字打字机出现，未打到的字隐藏、已打到的字普通黑字 */
+/* # 注释行：浅绿底，与代码行的蜂蜜色背景区分；直接整行显示，不逐字播放 */
 .copy-line.comment.current,
 .copy-line.comment.done {
   background: rgba(110, 180, 100, 0.10);  /* 浅绿底 */
-}
-.copy-line.comment .gh {
-  display: none;                           /* 未打到的字：完全不显示 */
-}
-.copy-line.comment .gh.typed {
-  display: inline;                         /* 已打到的字：显示 */
-  color: #2b2b2b;                          /* 普通黑字 */
-  background: transparent;
-  font-weight: 400;
-  font-style: normal;
 }
 
 /* === 描红模板：每字符包成 .gh；未敲 → 浅色半透明；敲对 → 黑加粗蜂蜜；错 → 红 === */
