@@ -413,24 +413,25 @@
     };
   }
 
-  // 抄写页（描红式、单框、所有行一次性注入）：
-  //   - 单框 .copy-card：顶部 .copy-banner 说明行（不可抄）+ 下方 .copy-stage。
-  //   - 开局即把该题全部代码行注入 .copy-stage：每行 .copy-target.ghost-line 一次性渲染、
-  //     所有 .gh 字符就位。行三态：
-  //       invisible = 折叠不可见（display:none，用户完全看不见）；
+  // 抄写页（描红式、单框草稿纸、所有行一次性注入）：
+  //   - 整个 .copy-card 就是一张草稿纸（蜂蜜边框 + 浅黄底），内部不再有独立卡片。
+  //   - 草稿纸里纵向平铺 N+1 行：第 0 行是说明行（"该框用于描红抄写，这一行不用抄"），
+  //     第 1..N 行是代码行。每行 .copy-line 一次性渲染、所有 .gh 字符就位，行三态：
+  //       invisible = 同草稿纸底色（display:visible 但看不见，DOM 已占位，框高稳定）；
   //       current   = 当前待敲行（浅色描红）；
-  //       done      = 已敲完（黑加粗只读，留在框内）。
-  //   - 开局第 1 行自动从 invisible 浮为 current（浅色）；用户在 textarea 逐字敲入，
-  //     匹配字符即时变 .typed（黑加粗蜂蜜背景），错字符标 .err（红闪）。
-  //   - 整行完全匹配回车 → 该行升 done（黑加粗），下一行从 invisible 浮为 current（浅色），
-  //     否则整段 .err 闪 600ms 再复位。Tab 缩进由 enableTab 支持；空行直接回车即可。
+  //       done      = 已敲完（字符黑加粗只读，留在纸内）。
+  //   - 开局第 0 行自动为 current（说明行，回车直接过，不计入已抄）；真代码行从 invisible 浮为
+  //     current（浅色）。用户在 textarea 逐字敲入，匹配字符即时变 .typed（黑加粗蜂蜜背景），
+  //     错字符标 .err（红闪）。整行完全匹配回车 → 该行升 done，下一行从 invisible 浮为 current。
+  //   - textarea 嵌在草稿纸最下方作为"写笔"。Tab 缩进由 enableTab 支持；空行直接回车即可。
   function renderCopy() {
     const p = state.problem;
     if (!p.steps || !p.steps.length) { toast("步骤还没生成"); return; }
     const last = p.steps[p.steps.length - 1];
     const full = (last.code || last.incremental_code || "").replace(/\s+$/, "");
     const lines = full.split("\n");
-    let done = 0;
+    const BANNER = "# 该框用于描红抄写（这一行不用抄）";
+    let done = 0; // 已提交行数（含第 0 行说明）
     recordProgress("copy", state.stepIndex);
     setLayoutMode("single");
     const work = $("workCard");
@@ -438,10 +439,6 @@
       <div class="section-title">📝 抄写练习 · 描红</div>
       <div class="copy-progress" id="copyProgress"></div>
       <div class="copy-card">
-        <div class="copy-banner">
-          <span class="copy-banner-label">📌 说明</span>
-          <span class="copy-banner-text"># 该框用于描红抄写（这一行不用抄）</span>
-        </div>
         <div class="copy-stage" id="copyStage"></div>
       </div>`;
     const $stage = $("copyStage");
@@ -457,7 +454,7 @@
     }
     function syncGhost(lineEl, input) {
       const spans = lineEl.querySelectorAll(".gh");
-      const t = lines[done];
+      const t = done === 0 ? BANNER : lines[done - 1];
       for (let k = 0; k < spans.length; k++) {
         if (k < input.length && input[k] === t[k]) {
           spans[k].classList.add("typed");
@@ -471,19 +468,20 @@
       }
     }
     function renderStage() {
-      if (done >= lines.length) { finishCopy(); return; }
+      if (done >= 1 + lines.length) { finishCopy(); return; }
       let html = "";
-      for (let i = 0; i < lines.length; i++) {
+      for (let i = 0; i < 1 + lines.length; i++) {
         const stat = i < done ? "done" : (i === done ? "current" : "invisible");
-        html += `<div class="copy-target ghost-line ${stat}" data-line="${i}">${ghostSpans(lines[i], stat === "done")}</div>`;
+        const text = i === 0 ? BANNER : lines[i - 1];
+        html += `<div class="copy-line ${stat}" data-line="${i}">${ghostSpans(text, stat === "done")}</div>`;
       }
       html += `
         <textarea id="copyInput" class="code copy-input" rows="2" placeholder="逐字敲入，与上面模板对应字符会变成黑字加粗    回车提交    Tab = 4 空格缩进"></textarea>
         <div id="copyMsg" class="copy-msg"></div>`;
       $stage.innerHTML = html;
-      $("copyProgress").textContent = `当前第 ${done + 1} / ${lines.length} 行（已抄 ${done}）`;
+      $("copyProgress").textContent = `已抄 ${Math.max(0, done - 1)} 行 / 共 ${lines.length} 行`;
       const ta = $("copyInput");
-      const lineEl = $stage.querySelector(".copy-target.current");
+      const lineEl = $stage.querySelector(".copy-line.current");
       ta.focus();
       lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
       enableTab(ta); // ✅ Tab 缩进支持
@@ -496,16 +494,29 @@
       });
     }
     function checkLine() {
-      const target = lines[done];
-      const input = $("copyInput").value;
-      const lineEl = $stage.querySelector(".copy-target.current");
+      const lineEl = $stage.querySelector(".copy-line.current");
       const spans = lineEl ? lineEl.querySelectorAll(".gh") : [];
+      // 第 0 行是说明行（不用抄）：回车直接过，不要求匹配、不计入已抄
+      if (done === 0) {
+        spans.forEach((s) => { s.classList.add("typed"); });
+        lineEl.classList.remove("current");
+        lineEl.classList.add("done");
+        API.event(p.id, state.stepIndex, "copy_line", { line: 0, ok: true, banner: true }).catch(() => {});
+        const msg = $("copyMsg");
+        msg.className = "copy-msg ok";
+        msg.textContent = "✅ 看明白了，开始抄第一行代码吧～";
+        done++;
+        setTimeout(renderStage, 180);
+        return;
+      }
+      const target = lines[done - 1];
+      const input = $("copyInput").value;
       if (input === target) {
         // 整行匹配：所有 gh 落定为 .typed（黑加粗）；该行升 done，下一行从 invisible 浮为 current
         spans.forEach((s) => { s.classList.add("typed"); s.classList.remove("err"); });
         lineEl.classList.remove("current");
         lineEl.classList.add("done");
-        API.event(p.id, state.stepIndex, "copy_line", { line: done + 1, ok: true }).catch(() => {});
+        API.event(p.id, state.stepIndex, "copy_line", { line: done, ok: true }).catch(() => {});
         const msg = $("copyMsg");
         msg.className = "copy-msg ok";
         msg.textContent = "✅ 对啦，继续～";
@@ -523,7 +534,7 @@
       msg.textContent = (input.length !== target.length)
         ? `长度不一致：你输 ${input.length} 字，正确应为 ${target.length} 字（第 ${pos} 个字符起不同）`
         : `第 ${pos} 个字符没比对上，再看看上面那行～`;
-      API.event(p.id, state.stepIndex, "copy_line", { line: done + 1, ok: false, pos }).catch(() => {});
+      API.event(p.id, state.stepIndex, "copy_line", { line: done, ok: false, pos }).catch(() => {});
       setTimeout(() => {
         spans.forEach((s) => { s.classList.remove("err"); });
       }, 600);
