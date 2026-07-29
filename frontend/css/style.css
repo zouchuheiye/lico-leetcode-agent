@@ -628,7 +628,7 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   padding: 22px 24px;
   box-shadow: 0 6px 22px rgba(230, 170, 40, 0.14);
   width: 961px;
-  min-height: 760px;
+  min-height: 760px;          /* 短代码也能撑出草稿纸感；长代码自然长高 */
   max-width: calc(100vw - 32px);
   margin: 0 auto;
 }
@@ -637,8 +637,7 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   flex-direction: column;
   gap: 2px;
   min-height: 620px;
-  max-height: 660px;
-  overflow-y: auto;
+  /* 不限定 max-height、不内滚：内容多时整张草稿纸长高，由外层浏览器滚动接管，避免两层滚动条打架 */
   padding-right: 4px;
 }
 /* 草稿纸里的每一行：连续文本流，不单独成卡片（仅当前行有极淡高亮定位） */
