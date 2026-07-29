@@ -550,31 +550,28 @@
       const inp = $("copyInput");
       const lineEl = $stage.querySelector(".copy-line.current");
       const isCmtCurrent = isComment(lines[cursor]);
-      if (isCmtCurrent) {
-        // 注释行：直接整行显示（浅绿底），不接受键盘输入
-        inp.value = "";
-        inp.blur();
-        lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
-      } else {
-        // 代码行：正常描红输入
-        inp.value = lineText[cursor] != null ? lineText[cursor] : "";
-        inp.focus();
-        lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
+      // 无论代码行还是注释行：input 始终聚焦、keydown 监听始终挂上，回车都能推进
+      inp.value = isCmtCurrent ? "" : (lineText[cursor] != null ? lineText[cursor] : "");
+      inp.focus();
+      lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (!isCmtCurrent) syncGhost(lineEl, inp.value); // 代码行：逐字描红；注释行整行已显
+      inp.addEventListener("blur", () => { if (cursor < lines.length) inp.focus(); });
+      inp.addEventListener("input", () => {
+        if (isCmtCurrent) { inp.value = ""; return; } // 注释行不接受输入
         syncGhost(lineEl, inp.value);
-        inp.addEventListener("blur", () => { if (cursor < lines.length && !isComment(lines[cursor])) inp.focus(); });
-        inp.addEventListener("input", () => {
+        $("copyMsg").textContent = "";
+      });
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitLine(); }
+        else if (e.key === "Tab") { // 4 空格缩进（仅代码行）
+          e.preventDefault();
+          if (isCmtCurrent) return;
+          inp.value += "    ";
           syncGhost(lineEl, inp.value);
-          $("copyMsg").textContent = "";
-        });
-        inp.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitLine(); }
-          else if (e.key === "Tab") { // 4 空格缩进
-            e.preventDefault();
-            inp.value += "    ";
-            syncGhost(lineEl, inp.value);
-          }
-        });
-      }
+        } else if (isCmtCurrent) {
+          e.preventDefault(); // 注释行屏蔽其它所有键
+        }
+      });
     }
     // 回车：代码行存本行文本并前进；注释行直接整行显示并推进
     function commitLine() {
