@@ -647,11 +647,16 @@ pre.code.readonly { background: #efe6cf; color: #6b5a32; border: 1px dashed #c9b
   overflow-y: auto;
   padding-right: 4px;
 }
+.copy-target.ghost-line.invisible {
+  display: none;
+}
 .copy-target.ghost-line.done {
-  opacity: .9;
   pointer-events: none;
   background: #fffdf5;
-  border-style: solid;
+  border-color: #f0d9a0;
+}
+.copy-target.ghost-line.current {
+  box-shadow: 0 0 0 2px rgba(230, 170, 40, 0.45) inset;
 }
 
 /* === 描红模板：每字符包成 .gh；未敲 → 浅色半透明；敲对 → 黑加粗蜂蜜；错 → 红 === */

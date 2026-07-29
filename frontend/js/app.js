@@ -413,13 +413,17 @@
     };
   }
 
-  // 抄写页（描红式、单框累积）：
-  //   - 单框 .copy-card：顶部 .copy-banner 说明行（不可抄）+ 下方 .copy-stage 累积区。
-  //   - 待抄模板每个字符拆成 <span class="gh">（默认浅色半透明）；
-  //     用户在 textarea 逐字敲入，匹配的字符即时变 .typed（黑色加粗蜂蜜背景）；
-  //     敲多或敲错的字符标 .err（红闪）。回车整行完全匹配 → 该行升级为 .done（黑加粗只读）
-  //     并累积到 stage 顶部，同时新一行以浅色 ghost 出现；否则整段 .err 闪 600ms 再复位。
-  //   - 无右侧历史栏；Tab 缩进由 enableTab 支持；空行直接回车即可（模板显「（空行）」占位）。
+  // 抄写页（描红式、单框、所有行一次性注入）：
+  //   - 单框 .copy-card：顶部 .copy-banner 说明行（不可抄）+ 下方 .copy-stage。
+  //   - 开局即把该题全部代码行注入 .copy-stage：每行 .copy-target.ghost-line 一次性渲染、
+  //     所有 .gh 字符就位。行三态：
+  //       invisible = 折叠不可见（display:none，用户完全看不见）；
+  //       current   = 当前待敲行（浅色描红）；
+  //       done      = 已敲完（黑加粗只读，留在框内）。
+  //   - 开局第 1 行自动从 invisible 浮为 current（浅色）；用户在 textarea 逐字敲入，
+  //     匹配字符即时变 .typed（黑加粗蜂蜜背景），错字符标 .err（红闪）。
+  //   - 整行完全匹配回车 → 该行升 done（黑加粗），下一行从 invisible 浮为 current（浅色），
+  //     否则整段 .err 闪 600ms 再复位。Tab 缩进由 enableTab 支持；空行直接回车即可。
   function renderCopy() {
     const p = state.problem;
     if (!p.steps || !p.steps.length) { toast("步骤还没生成"); return; }
@@ -441,33 +445,16 @@
         <div class="copy-stage" id="copyStage"></div>
       </div>`;
     const $stage = $("copyStage");
-    // 已敲完的行：每个 .gh 预置 .typed（黑加粗只读），整行带 .done
-    function buildDoneLine(target) {
-      if (target === "") {
-        return `<div class="copy-target ghost-line done"><span class="gh-empty">（空行）</span></div>`;
-      }
-      let html = `<div class="copy-target ghost-line done">`;
+    // 把目标行拆成 .gh 字符 span；typed=true 时直接落 .typed（黑加粗）
+    function ghostSpans(target, typed) {
+      if (target === "") return `<span class="gh-empty">（空行）直接回车即可</span>`;
+      let h = "";
       for (let k = 0; k < target.length; k++) {
         const ch = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-        html += `<span class="gh typed" data-pos="${k}">${ch}</span>`;
+        h += `<span class="gh${typed ? " typed" : ""}" data-pos="${k}">${ch}</span>`;
       }
-      html += `</div>`;
-      return html;
+      return h;
     }
-    // 当前行：每个 .gh 浅色裸态，随 input 实时描红
-    function buildGhostLine(target) {
-      if (target === "") {
-        return `<div class="copy-target ghost-line"><span class="gh-empty">（空行）直接回车即可</span></div>`;
-      }
-      let html = `<div class="copy-target ghost-line">`;
-      for (let k = 0; k < target.length; k++) {
-        const ch = target[k] === " " ? "&nbsp;" : escapeHtml(target[k]);
-        html += `<span class="gh" data-pos="${k}">${ch}</span>`;
-      }
-      html += `</div>`;
-      return html;
-    }
-    // 按当前 input.value 同步描红：匹配 → .typed；超出或不匹配 → .err
     function syncGhost(lineEl, input) {
       const spans = lineEl.querySelectorAll(".gh");
       const t = lines[done];
@@ -486,18 +473,19 @@
     function renderStage() {
       if (done >= lines.length) { finishCopy(); return; }
       let html = "";
-      for (let i = 0; i < done; i++) html += buildDoneLine(lines[i]);
-      const target = lines[done];
-      $("copyProgress").textContent = `当前第 ${done + 1} / ${lines.length} 行（已抄 ${done}）`;
-      html += buildGhostLine(target);
+      for (let i = 0; i < lines.length; i++) {
+        const stat = i < done ? "done" : (i === done ? "current" : "invisible");
+        html += `<div class="copy-target ghost-line ${stat}" data-line="${i}">${ghostSpans(lines[i], stat === "done")}</div>`;
+      }
       html += `
         <textarea id="copyInput" class="code copy-input" rows="2" placeholder="逐字敲入，与上面模板对应字符会变成黑字加粗    回车提交    Tab = 4 空格缩进"></textarea>
         <div id="copyMsg" class="copy-msg"></div>`;
       $stage.innerHTML = html;
+      $("copyProgress").textContent = `当前第 ${done + 1} / ${lines.length} 行（已抄 ${done}）`;
       const ta = $("copyInput");
-      const lineEl = $stage.querySelector(".copy-target.ghost-line:not(.done)");
+      const lineEl = $stage.querySelector(".copy-target.current");
       ta.focus();
-      ta.scrollIntoView({ block: "center", behavior: "smooth" });
+      lineEl.scrollIntoView({ block: "center", behavior: "smooth" });
       enableTab(ta); // ✅ Tab 缩进支持
       ta.addEventListener("input", () => {
         syncGhost(lineEl, ta.value);
@@ -510,11 +498,13 @@
     function checkLine() {
       const target = lines[done];
       const input = $("copyInput").value;
-      const lineEl = $stage.querySelector(".copy-target.ghost-line:not(.done)");
+      const lineEl = $stage.querySelector(".copy-target.current");
       const spans = lineEl ? lineEl.querySelectorAll(".gh") : [];
       if (input === target) {
-        // 全行匹配：所有 gh 落定为 .typed（黑色加粗）；该行升级为 .done 累积，新一行浅色出现
+        // 整行匹配：所有 gh 落定为 .typed（黑加粗）；该行升 done，下一行从 invisible 浮为 current
         spans.forEach((s) => { s.classList.add("typed"); s.classList.remove("err"); });
+        lineEl.classList.remove("current");
+        lineEl.classList.add("done");
         API.event(p.id, state.stepIndex, "copy_line", { line: done + 1, ok: true }).catch(() => {});
         const msg = $("copyMsg");
         msg.className = "copy-msg ok";
